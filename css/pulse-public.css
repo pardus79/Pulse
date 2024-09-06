@@ -1,0 +1,47 @@
+/**
+ * All of the CSS for your public-facing functionality should be
+ * included in this file.
+ */
+
+.pulse-affiliate-form {
+    max-width: 600px;
+    margin: 20px auto;
+    padding: 20px;
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    border-radius: 5px;
+}
+
+.pulse-affiliate-form label {
+    display: block;
+    margin-top: 15px;
+    font-weight: 600;
+}
+
+.pulse-affiliate-form input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+}
+
+.pulse-affiliate-form button {
+    margin-top: 20px;
+    padding: 10px 15px;
+    background: #0073aa;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.pulse-affiliate-form button:hover {
+    background: #005177;
+}
+
+.pulse-affiliate-result {
+    margin-top: 20px;
+    padding: 15px;
+    background: #e7f5fe;
+    border: 1px solid #b7e0fd;
+    border-radius: 3px;
+}

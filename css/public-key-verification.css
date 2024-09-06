@@ -1,0 +1,32 @@
+.pulse-public-key-verification {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+}
+
+.pulse-public-key-verification h2 {
+    color: #333;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.pulse-public-key-verification pre {
+    background-color: #eee;
+    padding: 10px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.pulse-public-key-verification .button {
+    margin-top: 10px;
+    margin-bottom: 20px;
+}
+
+.pulse-public-key-verification ul, 
+.pulse-public-key-verification ol {
+    margin-left: 20px;
+}

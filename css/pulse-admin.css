@@ -1,0 +1,40 @@
+/**
+ * All of the CSS for your admin-specific functionality should be
+ * included in this file.
+ */
+
+.pulse-admin-wrapper {
+    max-width: 800px;
+    margin: 20px auto;
+    padding: 20px;
+    background: #fff;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+.pulse-admin-header {
+    border-bottom: 2px solid #e5e5e5;
+    padding-bottom: 20px;
+    margin-bottom: 20px;
+}
+
+.pulse-admin-header h1 {
+    color: #23282d;
+}
+
+.pulse-admin-content label {
+    display: block;
+    margin-top: 15px;
+    font-weight: 600;
+}
+
+.pulse-admin-content input[type="text"],
+.pulse-admin-content input[type="number"],
+.pulse-admin-content textarea {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+}
+
+.pulse-admin-content .submit {
+    margin-top: 20px;
+}
