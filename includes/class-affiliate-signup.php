@@ -5,11 +5,13 @@
  * @package Pulse
  */
 
+namespace Pulse;
+
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-class Pulse_Affiliate_Signup {
+class Affiliate_Signup {
     /**
      * Constructor
      */
@@ -35,7 +37,7 @@ class Pulse_Affiliate_Signup {
      * Enqueue necessary scripts
      */
     public function enqueue_scripts() {
-        wp_enqueue_script('pulse-affiliate-signup', PULSE_URL . 'assets/js/affiliate-signup.js', array('jquery'), '1.0', true);
+        wp_enqueue_script('pulse-affiliate-signup', PULSE_URL . 'assets/js/affiliate-signup.js', array('jquery'), PULSE_VERSION, true);
         wp_localize_script('pulse-affiliate-signup', 'pulseAffiliateSignup', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('pulse_affiliate_signup_nonce')
@@ -50,15 +52,15 @@ class Pulse_Affiliate_Signup {
 
         $lightning_address = sanitize_text_field($_POST['lightning_address']);
 
-        if (!Pulse_Lightning_Address_Validator::validate($lightning_address)) {
-            wp_send_json_error('Invalid Lightning address format.');
+        if (!Lightning_Address_Validator::validate($lightning_address)) {
+            wp_send_json_error(__('Invalid Lightning address format.', 'pulse'));
         }
 
-        $encryption_handler = new Pulse_Encryption_Handler();
+        $encryption_handler = new Encryption_Handler();
         $encrypted_address = $encryption_handler->encrypt($lightning_address);
 
         if ($encrypted_address === false) {
-            wp_send_json_error('Encryption failed. Please try again.');
+            wp_send_json_error(__('Encryption failed. Please try again.', 'pulse'));
         }
 
         $options = get_option('pulse_options');
@@ -67,7 +69,7 @@ class Pulse_Affiliate_Signup {
         $affiliate_link = add_query_arg('aff', urlencode($encrypted_address), $store_url);
 
         wp_send_json_success(array(
-            'affiliate_link' => $affiliate_link,
+            'affiliate_link' => esc_url($affiliate_link),
             'public_key' => $encryption_handler->get_public_key()
         ));
     }

@@ -38,3 +38,26 @@
 .pulse-admin-content .submit {
     margin-top: 20px;
 }
+
+@media screen and (max-width: 782px) {
+    .pulse-admin-wrapper {
+        margin: 10px;
+        padding: 10px;
+    }
+}
+
+.pulse-copy-to-clipboard {
+    margin-left: 10px;
+}
+
+#pulse-reset-keys {
+    margin-top: 20px;
+    color: #fff;
+    background-color: #dc3545;
+    border-color: #dc3545;
+}
+
+#pulse-reset-keys:hover {
+    background-color: #c82333;
+    border-color: #bd2130;
+}

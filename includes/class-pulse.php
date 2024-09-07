@@ -5,6 +5,12 @@
  * @package Pulse
  */
 
+namespace Pulse;
+
+if (!defined('ABSPATH')) {
+    exit; // Exit if accessed directly
+}
+
 class Pulse {
 
     protected $loader;
@@ -36,13 +42,13 @@ class Pulse {
     }
 
     private function set_locale() {
-        $plugin_i18n = new Pulse_i18n();
+        $plugin_i18n = new I18n();
         $this->loader->add_action('plugins_loaded', $plugin_i18n, 'load_plugin_textdomain');
     }
 
     private function define_admin_hooks() {
-        $plugin_admin = new Pulse_Admin($this->get_plugin_name(), $this->get_version());
-        $admin_settings = new Pulse_Admin_Settings();
+        $plugin_admin = new Admin($this->get_plugin_name(), $this->get_version());
+        $admin_settings = new Admin_Settings();
 
         $this->loader->add_action('admin_enqueue_scripts', $plugin_admin, 'enqueue_styles');
         $this->loader->add_action('admin_enqueue_scripts', $plugin_admin, 'enqueue_scripts');
@@ -54,12 +60,12 @@ class Pulse {
 
     private function define_public_hooks() {
         $plugin_public = new Pulse_Public($this->get_plugin_name(), $this->get_version());
-        $affiliate_signup = new Pulse_Affiliate_Signup();
-        $order_processor = new Pulse_Order_Processor();
+        $affiliate_signup = new Affiliate_Signup();
+        $order_processor = new Order_Processor();
 
         $this->loader->add_action('wp_enqueue_scripts', $plugin_public, 'enqueue_styles');
         $this->loader->add_action('wp_enqueue_scripts', $plugin_public, 'enqueue_scripts');
-		$this->loader->add_action('wp_enqueue_scripts', $plugin_public, 'localize_script');
+        $this->loader->add_action('wp_enqueue_scripts', $plugin_public, 'localize_script');
         
         // Add affiliate signup shortcode
         $this->loader->add_shortcode('pulse_affiliate_signup', $affiliate_signup, 'affiliate_signup_shortcode');

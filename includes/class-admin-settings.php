@@ -5,11 +5,13 @@
  * @package Pulse
  */
 
+namespace Pulse;
+
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
 
-class Pulse_Admin_Settings {
+class Admin_Settings {
     private $options;
 
     public function __construct() {
@@ -19,8 +21,8 @@ class Pulse_Admin_Settings {
 
     public function add_plugin_page() {
         add_options_page(
-            'Pulse Settings',
-            'Pulse',
+            __('Pulse Settings', 'pulse'),
+            __('Pulse', 'pulse'),
             'manage_options',
             'pulse-settings',
             array($this, 'create_admin_page')
@@ -31,7 +33,7 @@ class Pulse_Admin_Settings {
         $this->options = get_option('pulse_options');
         ?>
         <div class="wrap">
-            <h1>Pulse Settings</h1>
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             <form method="post" action="options.php">
             <?php
                 settings_fields('pulse_option_group');
@@ -52,14 +54,14 @@ class Pulse_Admin_Settings {
 
         add_settings_section(
             'pulse_general_section',
-            'General Settings',
+            __('General Settings', 'pulse'),
             array($this, 'print_general_section_info'),
             'pulse-settings'
         );
 
         add_settings_field(
             'store_url', 
-            'Store URL', 
+            __('Store URL', 'pulse'), 
             array($this, 'store_url_callback'), 
             'pulse-settings', 
             'pulse_general_section'
@@ -67,7 +69,7 @@ class Pulse_Admin_Settings {
 
         add_settings_field(
             'commission_rate', 
-            'Commission Rate (%)', 
+            __('Commission Rate (%)', 'pulse'), 
             array($this, 'commission_rate_callback'), 
             'pulse-settings', 
             'pulse_general_section'
@@ -75,14 +77,14 @@ class Pulse_Admin_Settings {
 
         add_settings_section(
             'pulse_btcpay_section',
-            'BTCPay Server Settings',
+            __('BTCPay Server Settings', 'pulse'),
             array($this, 'print_btcpay_section_info'),
             'pulse-settings'
         );
 
         add_settings_field(
             'btcpay_url', 
-            'BTCPay Server URL', 
+            __('BTCPay Server URL', 'pulse'), 
             array($this, 'btcpay_url_callback'), 
             'pulse-settings', 
             'pulse_btcpay_section'
@@ -90,7 +92,7 @@ class Pulse_Admin_Settings {
 
         add_settings_field(
             'btcpay_api_key', 
-            'BTCPay Server API Key', 
+            __('BTCPay Server API Key', 'pulse'), 
             array($this, 'btcpay_api_key_callback'), 
             'pulse-settings', 
             'pulse_btcpay_section'
@@ -98,14 +100,14 @@ class Pulse_Admin_Settings {
 
         add_settings_section(
             'pulse_encryption_section',
-            'Encryption Settings',
+            __('Encryption Settings', 'pulse'),
             array($this, 'print_encryption_section_info'),
             'pulse-settings'
         );
 
         add_settings_field(
             'public_key', 
-            'Public Key', 
+            __('Public Key', 'pulse'), 
             array($this, 'public_key_callback'), 
             'pulse-settings', 
             'pulse_encryption_section'
@@ -113,7 +115,7 @@ class Pulse_Admin_Settings {
 
         add_settings_field(
             'private_key', 
-            'Private Key', 
+            __('Private Key', 'pulse'), 
             array($this, 'private_key_callback'), 
             'pulse-settings', 
             'pulse_encryption_section'
@@ -145,15 +147,15 @@ class Pulse_Admin_Settings {
     }
 
     public function print_general_section_info() {
-        print 'Enter your general settings below:';
+        esc_html_e('Enter your general settings below:', 'pulse');
     }
 
     public function print_btcpay_section_info() {
-        print 'Enter your BTCPay Server settings below:';
+        esc_html_e('Enter your BTCPay Server settings below:', 'pulse');
     }
 
     public function print_encryption_section_info() {
-        print 'Enter your encryption keys below:';
+        esc_html_e('Enter your encryption keys below:', 'pulse');
     }
 
     public function store_url_callback() {
@@ -200,4 +202,4 @@ class Pulse_Admin_Settings {
 }
 
 if (is_admin())
-    $pulse_settings = new Pulse_Admin_Settings();
+    $pulse_settings = new Admin_Settings();

@@ -1,40 +1,29 @@
-<form id="affiliate-signup-form">
-    <label for="lightning-address">Lightning Address:</label>
-    <input type="text" id="lightning-address" name="lightning-address" required>
-    <div id="address-error" class="error-message"></div>
-    <button type="submit">Generate Affiliate Link</button>
-</form>
+<?php
+/**
+ * Affiliate Signup Form Template
+ *
+ * @package Pulse
+ */
 
-<div id="public-key-info">
-    <h3>Public Encryption Key:</h3>
-    <pre id="public-key"></pre>
-    <p>You can use this public key to independently verify your affiliate link.</p>
-</div>
-
-<script>
-document.getElementById('affiliate-signup-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    var address = document.getElementById('lightning-address').value;
-    var errorDiv = document.getElementById('address-error');
-    
-    if (!validateLightningAddress(address)) {
-        errorDiv.textContent = 'Invalid Lightning address format. Please use a valid email-like format.';
-        return;
-    }
-    
-    // If valid, proceed with form submission (encrypt address and generate link)
-    this.submit();
-});
-
-function validateLightningAddress(address) {
-    var regex = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-    return regex.test(address);
+if (!defined('ABSPATH')) {
+    exit; // Exit if accessed directly
 }
+?>
 
-// Fetch and display public key
-fetch('/wp-json/my-affiliate-plugin/v1/public-key')
-    .then(response => response.text())
-    .then(key => {
-        document.getElementById('public-key').textContent = key;
-    });
-</script>
+<div class="pulse-affiliate-signup">
+    <form id="pulse-affiliate-signup-form" class="pulse-affiliate-form">
+        <label for="pulse-lightning-address"><?php esc_html_e('Lightning Address:', 'pulse'); ?></label>
+        <input type="text" id="pulse-lightning-address" name="lightning-address" required>
+        <div id="pulse-address-error" class="pulse-error-message" aria-live="polite"></div>
+        <button type="submit"><?php esc_html_e('Generate Affiliate Link', 'pulse'); ?></button>
+    </form>
+
+    <div id="pulse-result" class="pulse-affiliate-result" style="display:none;">
+        <h3><?php esc_html_e('Your Affiliate Link:', 'pulse'); ?></h3>
+        <p id="pulse-affiliate-link"></p>
+        
+        <h3><?php esc_html_e('Public Encryption Key:', 'pulse'); ?></h3>
+        <pre id="pulse-public-key"></pre>
+        <p><?php esc_html_e('You can use this public key to independently verify your affiliate link.', 'pulse'); ?></p>
+    </div>
+</div>
