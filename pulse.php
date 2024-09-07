@@ -164,6 +164,28 @@ if (!class_exists('Pulse')) {
                 'pulse-settings', 
                 'pulse_encryption_section'
             );
+			    add_settings_section(
+        'pulse_affiliate_section',
+        'Affiliate Settings',
+        array($this, 'affiliate_section_info'),
+        'pulse-settings'
+    );
+
+    add_settings_field(
+        'allow_unencrypted_addresses', 
+        'Allow Unencrypted Addresses', 
+        array($this, 'allow_unencrypted_addresses_callback'), 
+        'pulse-settings', 
+        'pulse_affiliate_section'
+    );
+
+    add_settings_field(
+        'custom_affiliate_mappings', 
+        'Custom Affiliate Mappings', 
+        array($this, 'custom_affiliate_mappings_callback'), 
+        'pulse-settings', 
+        'pulse_affiliate_section'
+    );
         }
 
         public function sanitize($input) {
@@ -189,8 +211,95 @@ if (!class_exists('Pulse')) {
             if (isset($input['private_key'])) {
                 $sanitary_values['private_key'] = sanitize_textarea_field($input['private_key']);
             }
-            return $sanitary_values;
-        }
+    if (isset($input['allow_unencrypted_addresses'])) {
+        $sanitary_values['allow_unencrypted_addresses'] = (bool) $input['allow_unencrypted_addresses'];
+    }
+
+    if (isset($input['custom_affiliate_mappings'])) {
+        $sanitary_values['custom_affiliate_mappings'] = $this->sanitize_custom_mappings($input['custom_affiliate_mappings']);
+    }
+
+    return $sanitary_values;
+}
+
+private function sanitize_custom_mappings($mappings) {
+    $sanitized = array();
+    if (is_array($mappings) && isset($mappings['custom_string']) && isset($mappings['lightning_address'])) {
+        $custom_strings = array_map('sanitize_text_field', $mappings['custom_string']);
+        $lightning_addresses = array_map('sanitize_email', $mappings['lightning_address']);
+        $sanitized = array_combine($custom_strings, $lightning_addresses);
+    }
+    return $sanitized;
+}
+
+public function affiliate_section_info() {
+    echo 'Configure affiliate link settings below:';
+}
+
+public function allow_unencrypted_addresses_callback() {
+    $options = get_option('pulse_options');
+    $checked = isset($options['allow_unencrypted_addresses']) ? $options['allow_unencrypted_addresses'] : false;
+    echo '<input type="checkbox" id="allow_unencrypted_addresses" name="pulse_options[allow_unencrypted_addresses]" value="1" ' . checked(1, $checked, false) . '/>';
+    echo '<label for="allow_unencrypted_addresses">Allow unencrypted lightning addresses in affiliate links</label>';
+}
+
+public function custom_affiliate_mappings_callback() {
+    $options = get_option('pulse_options');
+    $mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
+    
+    echo '<div id="custom-mappings-container">';
+    foreach ($mappings as $custom_string => $lightning_address) {
+        $full_url = home_url('?aff=' . urlencode($custom_string));
+        echo '<div class="mapping-row">';
+        echo '<input type="text" name="pulse_options[custom_affiliate_mappings][custom_string][]" value="' . esc_attr($custom_string) . '" placeholder="Custom String" />';
+        echo '<input type="text" name="pulse_options[custom_affiliate_mappings][lightning_address][]" value="' . esc_attr($lightning_address) . '" placeholder="Lightning Address" />';
+        echo '<input type="text" value="' . esc_url($full_url) . '" readonly />';
+        echo '<button type="button" class="copy-url">Copy URL</button>';
+        echo '<button type="button" class="remove-mapping">Remove</button>';
+        echo '</div>';
+    }
+    echo '</div>';
+    echo '<button type="button" id="add-mapping">Add Mapping</button>';
+
+    echo '<script>
+        jQuery(document).ready(function($) {
+            $("#add-mapping").on("click", function() {
+                var newRow = $("<div class=\'mapping-row\'>" +
+                    "<input type=\'text\' name=\'pulse_options[custom_affiliate_mappings][custom_string][]\' placeholder=\'Custom String\' />" +
+                    "<input type=\'text\' name=\'pulse_options[custom_affiliate_mappings][lightning_address][]\' placeholder=\'Lightning Address\' />" +
+                    "<input type=\'text\' readonly />" +
+                    "<button type=\'button\' class=\'copy-url\'>Copy URL</button>" +
+                    "<button type=\'button\' class=\'remove-mapping\'>Remove</button>" +
+                    "</div>");
+                $("#custom-mappings-container").append(newRow);
+            });
+
+            $(document).on("click", ".remove-mapping", function() {
+                $(this).parent().remove();
+            });
+
+            $(document).on("click", ".copy-url", function() {
+                var urlInput = $(this).prev("input[readonly]")[0];
+                urlInput.select();
+                document.execCommand("copy");
+                alert("URL copied to clipboard!");
+            });
+
+            $(document).on("input", "input[name^=\'pulse_options[custom_affiliate_mappings][custom_string]\']", function() {
+                var customString = $(this).val();
+                var fullUrl = "' . esc_js(home_url('?aff=')) . '" + encodeURIComponent(customString);
+                $(this).parent().find("input[readonly]").val(fullUrl);
+            });
+        });
+    </script>';
+
+    echo '<style>
+        .mapping-row { margin-bottom: 10px; }
+        .mapping-row input { margin-right: 5px; }
+        .mapping-row input[readonly] { width: 300px; }
+        #add-mapping { margin-top: 10px; }
+    </style>';
+}
 
         public function general_section_info() {
             echo 'Enter your general settings below:';
@@ -348,56 +457,61 @@ if (!class_exists('Pulse')) {
             add_shortcode('pulse_affiliate_signup', array($this, 'affiliate_signup_shortcode'));
         }
 
-        public function affiliate_signup_shortcode() {
-            $options = get_option('pulse_options');
-            $public_key = isset($options['public_key']) ? $options['public_key'] : '';
+public function affiliate_signup_shortcode() {
+    $options = get_option('pulse_options');
+    $public_key = isset($options['public_key']) ? $options['public_key'] : '';
 
-            ob_start();
-            ?>
-            <form id="pulse-affiliate-signup-form">
-                <label for="lightning_address">Lightning Address:</label>
-                <input type="text" id="lightning_address" name="lightning_address" required>
-                <button type="submit">Sign Up</button>
-            </form>
-            <div id="pulse-affiliate-result" style="display:none;"></div>
-            <div id="pulse-public-key-info">
-                <h3>Public Encryption Key:</h3>
-                <pre><?php echo esc_html($public_key); ?></pre>
-                <p>You can use this public key to independently verify your affiliate link. To verify:</p>
-                <ol>
-                    <li>Copy the public key above</li>
-                    <li>Use a trusted OpenSSL installation to verify the key</li>
-                    <li>Use the following command: <code>echo "YOUR_AFFILIATE_LINK" | openssl rsautl -pubin -inkey public_key.pem -verify</code></li>
-                    <li>This should output your original lightning address</li>
-                </ol>
-            </div>
-            <script>
-            jQuery(document).ready(function($) {
-                $('#pulse-affiliate-signup-form').on('submit', function(e) {
-                    e.preventDefault();
-                    var lightningAddress = $('#lightning_address').val();
-                    $.ajax({
-                        url: '<?php echo admin_url('admin-ajax.php'); ?>',
-                        type: 'POST',
-                        data: {
-                            action: 'pulse_affiliate_signup',
-                            lightning_address: lightningAddress,
-                            nonce: '<?php echo wp_create_nonce('pulse_affiliate_signup'); ?>'
-                        },
-                        success: function(response) {
-                            if (response.success) {
-                                $('#pulse-affiliate-result').html('Your affiliate link: ' + response.data.affiliate_link).show();
-                            } else {
-                                alert('Error: ' + response.data);
-                            }
+    ob_start();
+    ?>
+    <form id="pulse-affiliate-signup-form">
+        <label for="lightning_address">Lightning Address:</label>
+        <input type="text" id="lightning_address" name="lightning_address" required>
+        <button type="submit">Sign Up</button>
+    </form>
+    <div id="pulse-affiliate-result" style="display:none;"></div>
+    <div id="pulse-public-key-info">
+        <h3>Public Encryption Key:</h3>
+        <pre><?php echo esc_html($public_key); ?></pre>
+        <p>You can use this public key to independently verify your encrypted affiliate link.</p>
+    </div>
+    <script>
+    jQuery(document).ready(function($) {
+        $('#pulse-affiliate-signup-form').on('submit', function(e) {
+            e.preventDefault();
+            var lightningAddress = $('#lightning_address').val();
+            $.ajax({
+                url: '<?php echo admin_url('admin-ajax.php'); ?>',
+                type: 'POST',
+                data: {
+                    action: 'pulse_affiliate_signup',
+                    lightning_address: lightningAddress,
+                    nonce: '<?php echo wp_create_nonce('pulse_affiliate_signup'); ?>'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        var resultHtml = '<h3>Your Affiliate Links:</h3><ul>';
+                        if (response.data.custom_link) {
+                            resultHtml += '<li>Custom Link: ' + response.data.custom_link + '</li>';
                         }
-                    });
-                });
+                        if (response.data.unencrypted_link) {
+                            resultHtml += '<li>Unencrypted Link: ' + response.data.unencrypted_link + '</li>';
+                        }
+                        if (response.data.encrypted_link) {
+                            resultHtml += '<li>Encrypted Link: ' + response.data.encrypted_link + '</li>';
+                        }
+                        resultHtml += '</ul>';
+                        $('#pulse-affiliate-result').html(resultHtml).show();
+                    } else {
+                        alert('Error: ' + response.data);
+                    }
+                }
             });
-            </script>
-            <?php
-            return ob_get_clean();
-        }
+        });
+    });
+    </script>
+    <?php
+    return ob_get_clean();
+}
 
 public static function process_affiliate_signup() {
     check_ajax_referer('pulse_affiliate_signup', 'nonce');
@@ -410,44 +524,35 @@ public static function process_affiliate_signup() {
         return;
     }
 
-    // Debugging information
-    error_log('Pulse: Attempting to create Encryption_Handler instance');
+    $options = get_option('pulse_options');
+    $allow_unencrypted = isset($options['allow_unencrypted_addresses']) ? $options['allow_unencrypted_addresses'] : false;
+    $custom_mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
+
+    $response = array();
+
+    // Check if there's a custom mapping for this lightning address
+    $custom_string = array_search($lightning_address, $custom_mappings);
+    if ($custom_string !== false) {
+        $response['custom_link'] = home_url('?aff=' . urlencode($custom_string));
+    }
+
+    if ($allow_unencrypted) {
+        $response['unencrypted_link'] = home_url('?aff=' . urlencode($lightning_address));
+    }
+
     $encryption_handler = new \Pulse\Encryption_Handler();
-    error_log('Pulse: Encryption_Handler instance created');
-    
-    error_log('Pulse: Encryption_Handler methods: ' . print_r(get_class_methods($encryption_handler), true));
-
-    if (!method_exists($encryption_handler, 'are_keys_set')) {
-        error_log('Pulse: are_keys_set method does not exist');
-        wp_send_json_error('Encryption configuration error. Please contact the administrator.');
-        return;
+    if ($encryption_handler->are_keys_set()) {
+        $encrypted = $encryption_handler->encrypt($lightning_address);
+        if ($encrypted !== false) {
+            $response['encrypted_link'] = home_url('?aff=' . urlencode($encrypted));
+        }
     }
 
-    if (!$encryption_handler->are_keys_set()) {
-        error_log('Pulse: Encryption keys are not set. Unable to process affiliate signup.');
-        wp_send_json_error('Unable to process signup. Please contact the administrator.');
-        return;
+    if (empty($response)) {
+        wp_send_json_error('Unable to generate affiliate link. Please contact the administrator.');
+    } else {
+        wp_send_json_success($response);
     }
-	
-    $encryption_handler = new \Pulse\Encryption_Handler();
-    if (!$encryption_handler->are_keys_set()) {
-        error_log('Pulse: Encryption keys are not set. Unable to process affiliate signup.');
-        wp_send_json_error('Unable to process signup. Please contact the administrator.');
-        return;
-    }
-
-    $encrypted = $encryption_handler->encrypt($lightning_address);
-    if ($encrypted === false) {
-        wp_send_json_error('Encryption failed. Please try again.');
-        return;
-    }
-
-    $encoded = $encrypted; // It's already base64 encoded by the encrypt method
-    
-    // Generate the affiliate link
-    $affiliate_link = home_url('?aff=' . urlencode($encoded));
-
-    wp_send_json_success(array('affiliate_link' => $affiliate_link));
 }
         
 		public function capture_affiliate() {
@@ -479,37 +584,36 @@ public function process_affiliate_payout($order_id) {
         error_log('Pulse: No affiliate associated with order ' . $order_id);
         return;
     }
-	
-	$encryption_handler = new \Pulse\Encryption_Handler();
-		if (!$encryption_handler->are_keys_set()) {
-			error_log('Pulse: Encryption keys are not set. Please configure them in the plugin settings.');
-			return; // Handle the error appropriately
-		}
 
     $options = get_option('pulse_options');
-    $private_key = isset($options['private_key']) ? $options['private_key'] : '';
+    $allow_unencrypted = isset($options['allow_unencrypted_addresses']) ? $options['allow_unencrypted_addresses'] : false;
+    $custom_mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
     $commission_rate = isset($options['commission_rate']) ? floatval($options['commission_rate']) : 0;
 
-    if (empty($private_key) || $commission_rate <= 0) {
-        error_log('Pulse: Missing private key or invalid commission rate for order ' . $order_id);
+    if ($commission_rate <= 0) {
+        error_log('Pulse: Invalid commission rate for order ' . $order_id);
         return;
     }
 
-    // Decrypt the affiliate lightning address
-    $privkey = openssl_pkey_get_private($private_key);
-    if ($privkey === false) {
-        error_log('Pulse: Invalid private key for order ' . $order_id);
-        return;
+    // Determine the lightning address
+    if (isset($custom_mappings[$encoded_affiliate])) {
+        $lightning_address = $custom_mappings[$encoded_affiliate];
+    } elseif ($allow_unencrypted && filter_var($encoded_affiliate, FILTER_VALIDATE_EMAIL)) {
+        $lightning_address = $encoded_affiliate;
+    } else {
+        $encryption_handler = new \Pulse\Encryption_Handler();
+        if (!$encryption_handler->are_keys_set()) {
+            error_log('Pulse: Encryption keys are not set. Unable to process affiliate payout.');
+            return;
+        }
+        $decrypted = $encryption_handler->decrypt($encoded_affiliate);
+        if ($decrypted === false) {
+            error_log('Pulse: Failed to decrypt affiliate address for order ' . $order_id);
+            return;
+        }
+        $lightning_address = trim($decrypted);
     }
 
-    $decoded = base64_decode(urldecode($encoded_affiliate));
-	$decrypted = $encryption_handler->decrypt($encoded_affiliate);
-	if ($decrypted === false) {
-		error_log('Pulse: Failed to decrypt affiliate address for order ' . $order_id);
-		return;
-	}
-
-	$lightning_address = trim($decrypted);
     error_log('Pulse: Decrypted lightning address: ' . $lightning_address);
 
     // Calculate payout amount
