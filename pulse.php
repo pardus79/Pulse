@@ -3,7 +3,7 @@
  * Plugin Name: Pulse
  * Plugin URI: https://github.com/pardus79/Pulse
  * Description: Automated affiliate payouts for WooCommerce using Bitcoin Lightning Network and BTCPayServer
- * Version: 0.01
+ * Version: 0.1.0
  * Author: BtcPins
  * Author URI: https://btcpins.com
  * License: The Unlicense
