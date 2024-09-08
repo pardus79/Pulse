@@ -141,6 +141,14 @@ if (!class_exists('Pulse')) {
                 'pulse-settings', 
                 'pulse_btcpay_section'
             );
+			
+			add_settings_field(
+				'auto_approve_claims', 
+				'Auto-approve Claims', 
+				array($this, 'auto_approve_claims_callback'), 
+				'pulse-settings', 
+				'pulse_btcpay_section'
+			);
 
             add_settings_section(
                 'pulse_encryption_section',
@@ -218,8 +226,17 @@ if (!class_exists('Pulse')) {
     if (isset($input['custom_affiliate_mappings'])) {
         $sanitary_values['custom_affiliate_mappings'] = $this->sanitize_custom_mappings($input['custom_affiliate_mappings']);
     }
-
+	
+    $sanitary_values['auto_approve_claims'] = isset($input['auto_approve_claims']) ? true : false;
+	
     return $sanitary_values;
+}
+
+public function auto_approve_claims_callback() {
+    $options = get_option('pulse_options');
+    $auto_approve = isset($options['auto_approve_claims']) ? $options['auto_approve_claims'] : true;
+    echo '<input type="checkbox" id="auto_approve_claims" name="pulse_options[auto_approve_claims]" value="1" ' . checked(true, $auto_approve, false) . '/>';
+    echo '<label for="auto_approve_claims">Automatically approve payout claims (If unchecked, payouts will require manual approval in BTCPay Server)</label>';
 }
 
 private function sanitize_custom_mappings($mappings) {
@@ -619,25 +636,26 @@ public function process_affiliate_payout($order_id) {
     // Calculate payout amount
     $order_total = $order->get_total();
     $payout_amount = $order_total * ($commission_rate / 100);
+    $currency = $order->get_currency();
 
-    error_log('Pulse: Attempting to process payout of ' . $payout_amount . ' to ' . $lightning_address . ' for order ' . $order_id);
+    error_log('Pulse: Attempting to process payout of ' . $payout_amount . ' ' . $currency . ' to ' . $lightning_address . ' for order ' . $order_id);
 
     // Process payout via BTCPay Server
     $btcpay_integration = new Pulse_BTCPay_Integration();
-    $payout_id = $btcpay_integration->create_payout($lightning_address, $payout_amount);
+    $payout_id = $btcpay_integration->create_payout($lightning_address, $payout_amount, $currency);
 
     if ($payout_id) {
-        $order->add_order_note(sprintf(__('Affiliate payout processed. Payout ID: %s', 'pulse'), $payout_id));
+        $order->add_order_note(sprintf(__('Affiliate payout processed. Payout ID: %s, Amount: %s %s', 'pulse'), $payout_id, $payout_amount, $currency));
         $order->update_meta_data('pulse_affiliate_payout_id', $payout_id);
         $order->save();
         error_log('Pulse: Successfully processed payout for order ' . $order_id . '. Payout ID: ' . $payout_id);
 
-        do_action('pulse_affiliate_payout_processed', $order_id, $payout_id, $lightning_address, $payout_amount);
+        do_action('pulse_affiliate_payout_processed', $order_id, $payout_id, $lightning_address, $payout_amount, $currency);
     } else {
         error_log('Pulse: Failed to process affiliate payout for order ' . $order_id);
         $order->add_order_note(__('Failed to process affiliate payout. Please check the logs for more information.', 'pulse'));
 
-        do_action('pulse_affiliate_payout_failed', $order_id, $lightning_address, $payout_amount);
+        do_action('pulse_affiliate_payout_failed', $order_id, $lightning_address, $payout_amount, $currency);
     }
 
     return $payout_id ? $payout_id : false;
