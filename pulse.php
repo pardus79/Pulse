@@ -587,80 +587,80 @@ public static function process_affiliate_signup() {
             }
         }
 
-public function process_affiliate_payout($order_id) {
-    error_log('Pulse: Starting affiliate payout process for order ' . $order_id);
-    
-    $order = wc_get_order($order_id);
-    if (!$order) {
-        error_log('Pulse: Invalid order ID ' . $order_id);
-        return;
-    }
-
-    $encoded_affiliate = $order->get_meta('pulse_affiliate');
-    if (!$encoded_affiliate) {
-        error_log('Pulse: No affiliate associated with order ' . $order_id);
-        return;
-    }
-
-    $options = get_option('pulse_options');
-    $allow_unencrypted = isset($options['allow_unencrypted_addresses']) ? $options['allow_unencrypted_addresses'] : false;
-    $custom_mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
-    $commission_rate = isset($options['commission_rate']) ? floatval($options['commission_rate']) : 0;
-
-    if ($commission_rate <= 0) {
-        error_log('Pulse: Invalid commission rate for order ' . $order_id);
-        return;
-    }
-
-    // Determine the lightning address
-    if (isset($custom_mappings[$encoded_affiliate])) {
-        $lightning_address = $custom_mappings[$encoded_affiliate];
-    } elseif ($allow_unencrypted && filter_var($encoded_affiliate, FILTER_VALIDATE_EMAIL)) {
-        $lightning_address = $encoded_affiliate;
-    } else {
-        $encryption_handler = new \Pulse\Encryption_Handler();
-        if (!$encryption_handler->are_keys_set()) {
-            error_log('Pulse: Encryption keys are not set. Unable to process affiliate payout.');
+    public function process_affiliate_payout($order_id) {
+        error_log('Pulse: Starting affiliate payout process for order ' . $order_id);
+        
+        $order = wc_get_order($order_id);
+        if (!$order) {
+            error_log('Pulse: Invalid order ID ' . $order_id);
             return;
         }
-        $decrypted = $encryption_handler->decrypt($encoded_affiliate);
-        if ($decrypted === false) {
-            error_log('Pulse: Failed to decrypt affiliate address for order ' . $order_id);
+
+        $encoded_affiliate = $order->get_meta('pulse_affiliate');
+        if (!$encoded_affiliate) {
+            error_log('Pulse: No affiliate associated with order ' . $order_id);
             return;
         }
-        $lightning_address = trim($decrypted);
+
+        $options = get_option('pulse_options');
+        $allow_unencrypted = isset($options['allow_unencrypted_addresses']) ? $options['allow_unencrypted_addresses'] : false;
+        $custom_mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
+        $commission_rate = isset($options['commission_rate']) ? floatval($options['commission_rate']) : 0;
+
+        if ($commission_rate <= 0) {
+            error_log('Pulse: Invalid commission rate for order ' . $order_id);
+            return;
+        }
+
+        // Determine the lightning address
+        if (isset($custom_mappings[$encoded_affiliate])) {
+            $lightning_address = $custom_mappings[$encoded_affiliate];
+        } elseif ($allow_unencrypted && filter_var($encoded_affiliate, FILTER_VALIDATE_EMAIL)) {
+            $lightning_address = $encoded_affiliate;
+        } else {
+            $encryption_handler = new \Pulse\Encryption_Handler();
+            if (!$encryption_handler->are_keys_set()) {
+                error_log('Pulse: Encryption keys are not set. Unable to process affiliate payout.');
+                return;
+            }
+            $decrypted = $encryption_handler->decrypt($encoded_affiliate);
+            if ($decrypted === false) {
+                error_log('Pulse: Failed to decrypt affiliate address for order ' . $order_id);
+                return;
+            }
+            $lightning_address = trim($decrypted);
+        }
+
+        error_log('Pulse: Decrypted lightning address: ' . $lightning_address);
+
+        // Calculate payout amount based on order subtotal (excluding shipping and tax)
+        $order_subtotal = $order->get_subtotal();
+        $payout_amount = $order_subtotal * ($commission_rate / 100);
+        $currency = $order->get_currency();
+
+        error_log('Pulse: Calculated payout amount: ' . $payout_amount . ' ' . $currency . ' (based on subtotal: ' . $order_subtotal . ')');
+
+        // Process payout via BTCPay Server
+        $btcpay_integration = new Pulse_BTCPay_Integration();
+        $payout_id = $btcpay_integration->create_payout($lightning_address, $payout_amount, $currency);
+
+        if ($payout_id) {
+            $order->add_order_note(sprintf(__('Affiliate payout processed. Payout ID: %s, Amount: %s %s', 'pulse'), $payout_id, $payout_amount, $currency));
+            $order->update_meta_data('pulse_affiliate_payout_id', $payout_id);
+            $order->save();
+            error_log('Pulse: Successfully processed payout for order ' . $order_id . '. Payout ID: ' . $payout_id);
+
+            do_action('pulse_affiliate_payout_processed', $order_id, $payout_id, $lightning_address, $payout_amount, $currency);
+        } else {
+            error_log('Pulse: Failed to process affiliate payout for order ' . $order_id);
+            $order->add_order_note(__('Failed to process affiliate payout. Please check the logs for more information.', 'pulse'));
+
+            do_action('pulse_affiliate_payout_failed', $order_id, $lightning_address, $payout_amount, $currency);
+        }
+
+        return $payout_id ? $payout_id : false;
     }
-
-    error_log('Pulse: Decrypted lightning address: ' . $lightning_address);
-
-    // Calculate payout amount
-    $order_total = $order->get_total();
-    $payout_amount = $order_total * ($commission_rate / 100);
-    $currency = $order->get_currency();
-
-    error_log('Pulse: Attempting to process payout of ' . $payout_amount . ' ' . $currency . ' to ' . $lightning_address . ' for order ' . $order_id);
-
-    // Process payout via BTCPay Server
-    $btcpay_integration = new Pulse_BTCPay_Integration();
-    $payout_id = $btcpay_integration->create_payout($lightning_address, $payout_amount, $currency);
-
-    if ($payout_id) {
-        $order->add_order_note(sprintf(__('Affiliate payout processed. Payout ID: %s, Amount: %s %s', 'pulse'), $payout_id, $payout_amount, $currency));
-        $order->update_meta_data('pulse_affiliate_payout_id', $payout_id);
-        $order->save();
-        error_log('Pulse: Successfully processed payout for order ' . $order_id . '. Payout ID: ' . $payout_id);
-
-        do_action('pulse_affiliate_payout_processed', $order_id, $payout_id, $lightning_address, $payout_amount, $currency);
-    } else {
-        error_log('Pulse: Failed to process affiliate payout for order ' . $order_id);
-        $order->add_order_note(__('Failed to process affiliate payout. Please check the logs for more information.', 'pulse'));
-
-        do_action('pulse_affiliate_payout_failed', $order_id, $lightning_address, $payout_amount, $currency);
-    }
-
-    return $payout_id ? $payout_id : false;
-}
-
+	
     /**
      * Initialize the plugin
      */
