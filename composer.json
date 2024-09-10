@@ -1,1 +1,5 @@
-
+{
+    "require": {
+        "textalk/websocket": "^1.5"
+    }
+}
