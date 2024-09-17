@@ -19,17 +19,54 @@ if (!defined('WPINC')) {
     die;
 }
 
+spl_autoload_register(function ($class) {
+    // Base directory for the namespace prefix
+    $base_dir = __DIR__ . '/includes/';
+
+    // Namespace prefix
+    $prefix = 'Pulse\\';
+
+    // Does the class use the namespace prefix?
+    $len = strlen($prefix);
+    if (strncmp($prefix, $class, $len) !== 0) {
+        // No, move to the next registered autoloader
+        return;
+    }
+
+    // Get the relative class name
+    $relative_class = substr($class, $len);
+
+    // Try different file naming conventions
+    $file_variants = [
+        $base_dir . 'class-' . strtolower(str_replace('\\', '-', $relative_class)) . '.php',
+        $base_dir . 'class-' . strtolower(str_replace(['\\', '_'], '', $relative_class)) . '.php',
+    ];
+
+    foreach ($file_variants as $file) {
+        if (file_exists($file)) {
+            require $file;
+            error_log("Pulse: Successfully loaded class file: " . $file);
+            return true;
+        }
+    }
+
+    error_log("Pulse: Failed to load class file for: " . $class);
+    error_log("Pulse: Tried files: " . implode(', ', $file_variants));
+});
+
 // Define plugin constants
 define('PULSE_VERSION', '0.01');
 define('PULSE_PATH', plugin_dir_path(__FILE__));
 define('PULSE_URL', plugin_dir_url(__FILE__));
-require_once plugin_dir_path(__FILE__) . 'includes/class-btcpay-integration.php';
-require_once plugin_dir_path(__FILE__) . 'includes/class-encryption-handler.php';
 use Pulse\Encryption_Handler;
+require_once plugin_dir_path(__FILE__) . 'includes/class-encryption-handler.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-btcpay-integration.php';
 
 // Main plugin class
 if (!class_exists('Pulse')) {
     class Pulse {
+		private $encryption_key;
+		
         public function __construct() {
             add_action('admin_menu', array($this, 'add_plugin_page'));
             add_action('admin_init', array($this, 'page_init'));
@@ -38,16 +75,31 @@ if (!class_exists('Pulse')) {
             add_action('init', array($this, 'capture_affiliate'));
             add_action('woocommerce_checkout_order_processed', array($this, 'add_affiliate_to_order'), 10, 3);
             add_action('woocommerce_order_status_completed', array($this, 'process_affiliate_payout'));
-            register_activation_hook(__FILE__, array($this, 'activate'));
+			add_action('wp_ajax_pulse_generate_affiliate_link', array($this, 'process_affiliate_signup'));
+			add_action('wp_ajax_nopriv_pulse_generate_affiliate_link', array($this, 'process_affiliate_signup'));
+			
+			// Register options when the plugin is loaded
+			$this->register_options();
+			
+			// Register activation hook
+			register_activation_hook(__FILE__, array($this, 'activate'));
+			
+		$this->encryption_key = get_option('pulse_encryption_key');
+        if (!$this->encryption_key) {
+            $this->encryption_key = bin2hex(random_bytes(16)); // 128-bit key
+            update_option('pulse_encryption_key', $this->encryption_key);
+        }
+	
         }
 
         public function run() {
             // Main plugin execution code here
         }
 
-        public function activate() {
-            $this->create_affiliate_signup_page();
-        }
+public function activate() {
+    $this->register_options();
+    $this->create_affiliate_signup_page();
+}
 
         public function enqueue_admin_scripts($hook) {
             if ('settings_page_pulse-settings' !== $hook) {
@@ -172,12 +224,13 @@ if (!class_exists('Pulse')) {
                 'pulse-settings', 
                 'pulse_encryption_section'
             );
-			    add_settings_section(
-        'pulse_affiliate_section',
-        'Affiliate Settings',
-        array($this, 'affiliate_section_info'),
-        'pulse-settings'
-    );
+			
+			add_settings_section(
+				'pulse_affiliate_section',
+				'Affiliate Settings',
+				array($this, 'affiliate_section_info'),
+				'pulse-settings'
+			);
 
     add_settings_field(
         'allow_unencrypted_addresses', 
@@ -186,7 +239,7 @@ if (!class_exists('Pulse')) {
         'pulse-settings', 
         'pulse_affiliate_section'
     );
-
+	
     add_settings_field(
         'custom_affiliate_mappings', 
         'Custom Affiliate Mappings', 
@@ -195,40 +248,42 @@ if (!class_exists('Pulse')) {
         'pulse_affiliate_section'
     );
         }
+public function sanitize($input) {
+    $sanitary_values = array();
+    $default_options = $this->get_default_options();
 
-        public function sanitize($input) {
-            $sanitary_values = array();
-            if (isset($input['store_url'])) {
-                $sanitary_values['store_url'] = sanitize_text_field($input['store_url']);
+    foreach ($default_options as $key => $default_value) {
+        if (isset($input[$key])) {
+            switch ($key) {
+                case 'store_url':
+                case 'btcpay_url':
+                    $sanitary_values[$key] = esc_url_raw($input[$key]);
+                    error_log("Pulse: Sanitizing {$key}: " . $input[$key] . " -> " . $sanitary_values[$key]);
+                    break;
+                case 'btcpay_api_key':
+                case 'btcpay_store_id':
+                    $sanitary_values[$key] = sanitize_text_field($input[$key]);
+                    break;
+                case 'public_key':
+                case 'private_key':
+                    $sanitary_values[$key] = sanitize_textarea_field($input[$key]);
+                    break;
+                case 'allow_unencrypted_addresses':
+                case 'auto_approve_claims':
+                    $sanitary_values[$key] = (bool) $input[$key];
+                    break;
+                case 'custom_affiliate_mappings':
+                    $sanitary_values[$key] = $this->sanitize_custom_mappings($input[$key]);
+                    break;
+                default:
+                    $sanitary_values[$key] = $input[$key];
             }
-            if (isset($input['commission_rate'])) {
-                $sanitary_values['commission_rate'] = floatval($input['commission_rate']);
-            }
-            if (isset($input['btcpay_url'])) {
-                $sanitary_values['btcpay_url'] = sanitize_text_field($input['btcpay_url']);
-            }
-            if (isset($input['btcpay_api_key'])) {
-                $sanitary_values['btcpay_api_key'] = sanitize_text_field($input['btcpay_api_key']);
-            }
-            if (isset($input['btcpay_store_id'])) {
-                $sanitary_values['btcpay_store_id'] = sanitize_text_field($input['btcpay_store_id']);
-            }
-            if (isset($input['public_key'])) {
-                $sanitary_values['public_key'] = sanitize_textarea_field($input['public_key']);
-            }
-            if (isset($input['private_key'])) {
-                $sanitary_values['private_key'] = sanitize_textarea_field($input['private_key']);
-            }
-    if (isset($input['allow_unencrypted_addresses'])) {
-        $sanitary_values['allow_unencrypted_addresses'] = (bool) $input['allow_unencrypted_addresses'];
+       } else {
+            $sanitary_values[$key] = $default_value;
+            error_log("Pulse: Using default value for {$key}: " . $default_value);
+        }
     }
 
-    if (isset($input['custom_affiliate_mappings'])) {
-        $sanitary_values['custom_affiliate_mappings'] = $this->sanitize_custom_mappings($input['custom_affiliate_mappings']);
-    }
-	
-    $sanitary_values['auto_approve_claims'] = isset($input['auto_approve_claims']) ? true : false;
-	
     return $sanitary_values;
 }
 
@@ -473,105 +528,156 @@ public function custom_affiliate_mappings_callback() {
         public function register_shortcodes() {
             add_shortcode('pulse_affiliate_signup', array($this, 'affiliate_signup_shortcode'));
         }
-
-public function affiliate_signup_shortcode() {
-    $options = get_option('pulse_options');
-    $public_key = isset($options['public_key']) ? $options['public_key'] : '';
-
-    ob_start();
-    ?>
-    <form id="pulse-affiliate-signup-form">
-        <label for="lightning_address">Lightning Address:</label>
-        <input type="text" id="lightning_address" name="lightning_address" required>
-        <button type="submit">Sign Up</button>
-    </form>
-    <div id="pulse-affiliate-result" style="display:none;"></div>
-    <div id="pulse-public-key-info">
-        <h3>Public Encryption Key:</h3>
-        <pre><?php echo esc_html($public_key); ?></pre>
-        <p>You can use this public key to independently verify your encrypted affiliate link.</p>
-    </div>
-    <script>
-    jQuery(document).ready(function($) {
-        $('#pulse-affiliate-signup-form').on('submit', function(e) {
-            e.preventDefault();
-            var lightningAddress = $('#lightning_address').val();
-            $.ajax({
-                url: '<?php echo admin_url('admin-ajax.php'); ?>',
-                type: 'POST',
-                data: {
-                    action: 'pulse_affiliate_signup',
-                    lightning_address: lightningAddress,
-                    nonce: '<?php echo wp_create_nonce('pulse_affiliate_signup'); ?>'
-                },
-                success: function(response) {
-                    if (response.success) {
-                        var resultHtml = '<h3>Your Affiliate Links:</h3><ul>';
-                        if (response.data.custom_link) {
-                            resultHtml += '<li>Custom Link: ' + response.data.custom_link + '</li>';
-                        }
-                        if (response.data.unencrypted_link) {
-                            resultHtml += '<li>Unencrypted Link: ' + response.data.unencrypted_link + '</li>';
-                        }
-                        if (response.data.encrypted_link) {
-                            resultHtml += '<li>Encrypted Link: ' + response.data.encrypted_link + '</li>';
-                        }
-                        resultHtml += '</ul>';
-                        $('#pulse-affiliate-result').html(resultHtml).show();
-                    } else {
-                        alert('Error: ' + response.data);
-                    }
-                }
-            });
-        });
-    });
-    </script>
-    <?php
-    return ob_get_clean();
+		
+	public function register_options() {
+    if (false == get_option('pulse_options')) {
+        add_option('pulse_options', $this->get_default_options());
+    }
 }
 
-public static function process_affiliate_signup() {
-    check_ajax_referer('pulse_affiliate_signup', 'nonce');
+private function get_default_options() {
+    return array(
+        'store_url' => '',
+        'commission_rate' => 10,
+        'btcpay_url' => '',
+        'btcpay_api_key' => '',
+        'btcpay_store_id' => '',
+        'public_key' => '',
+        'private_key' => '',
+        'allow_unencrypted_addresses' => false,
+        'auto_approve_claims' => true,
+        'custom_affiliate_mappings' => array()
+    );
+}
 
-    $lightning_address = sanitize_text_field($_POST['lightning_address']);
+    public function affiliate_signup_shortcode() {
+        $options = get_option('pulse_options');
+        $public_key = isset($options['public_key']) ? $options['public_key'] : '';
 
-    // Validate the lightning address
-    if (!filter_var($lightning_address, FILTER_VALIDATE_EMAIL)) {
-        wp_send_json_error('Invalid lightning address format.');
+        ob_start();
+        ?>
+        <form id="pulse-affiliate-signup-form">
+            <label for="pulse-lightning-address">Lightning Address:</label>
+            <input type="text" id="pulse-lightning-address" name="lightning_address" required>
+            <button type="submit">Generate Affiliate Link</button>
+        </form>
+        <div id="pulse-result" style="display:none;"></div>
+        <div id="pulse-public-key-info">
+            <h3>Public Encryption Key:</h3>
+            <pre><?php echo esc_html($public_key); ?></pre>
+            <p>You can use this public key to independently verify your encrypted affiliate link.</p>
+        </div>
+        <script>
+        jQuery(document).ready(function($) {
+            $('#pulse-affiliate-signup-form').on('submit', function(e) {
+                e.preventDefault();
+                var lightningAddress = $('#pulse-lightning-address').val();
+                $.ajax({
+                    url: '<?php echo admin_url('admin-ajax.php'); ?>',
+                    type: 'POST',
+                    data: {
+                        action: 'pulse_affiliate_signup',
+                        lightning_address: lightningAddress,
+                        nonce: '<?php echo wp_create_nonce('pulse_affiliate_signup'); ?>'
+                    },
+                    success: function(response) {
+                        console.log('Received response:', response);
+                        if (response.success) {
+                            var resultHtml = '<h3>Your Affiliate Links:</h3><ul>';
+                            if (response.data.lightning_link) {
+                                resultHtml += '<li>Lightning Address Link: ' + response.data.lightning_link + '</li>';
+                            }
+                            if (response.data.custom_link) {
+                                resultHtml += '<li>Custom Link: ' + response.data.custom_link + '</li>';
+                            }
+                            if (response.data.unencrypted_link) {
+                                resultHtml += '<li>Unencrypted Link: ' + response.data.unencrypted_link + '</li>';
+                            }
+                            if (response.data.encrypted_link) {
+                                resultHtml += '<li>Encrypted Link: ' + response.data.encrypted_link + '</li>';
+                            }
+                            resultHtml += '</ul>';
+                            $('#pulse-result').html(resultHtml).show();
+                        } else {
+                            alert('Error: ' + response.data);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('AJAX Error:', status, error);
+                        alert('An error occurred while processing your request. Please try again later.');
+                    }
+                });
+            });
+        });
+        </script>
+        <?php
+        return ob_get_clean();
+    }
+	
+public function process_affiliate_signup() {
+    error_log('Pulse: Starting process_affiliate_signup');
+    
+    if (!check_ajax_referer('pulse_affiliate_signup', 'nonce', false)) {
+        error_log('Pulse: Nonce check failed');
+        wp_send_json_error('Security check failed');
         return;
     }
 
+    if (!isset($_POST['lightning_address'])) {
+        error_log('Pulse: lightning_address not set in POST data');
+        wp_send_json_error('No input provided');
+        return;
+    }
+
+    $input = sanitize_text_field($_POST['lightning_address']);
+    error_log('Pulse: Processing affiliate signup for input: ' . $input);
+
+    if (empty($input)) {
+        error_log('Pulse: Input is empty');
+        wp_send_json_error('No input provided');
+        return;
+    }
+    
     $options = get_option('pulse_options');
     $allow_unencrypted = isset($options['allow_unencrypted_addresses']) ? $options['allow_unencrypted_addresses'] : false;
     $custom_mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
 
     $response = array();
 
-    // Check if there's a custom mapping for this lightning address
-    $custom_string = array_search($lightning_address, $custom_mappings);
-    if ($custom_string !== false) {
-        $response['custom_link'] = home_url('?aff=' . urlencode($custom_string));
-    }
+    if (filter_var($input, FILTER_VALIDATE_EMAIL)) {
+        $lightning_address = $input;
+        error_log('Pulse: Valid Lightning address entered: ' . $lightning_address);
 
-    if ($allow_unencrypted) {
-        $response['unencrypted_link'] = home_url('?aff=' . urlencode($lightning_address));
-    }
-
-    $encryption_handler = new \Pulse\Encryption_Handler();
-    if ($encryption_handler->are_keys_set()) {
-        $encrypted = $encryption_handler->encrypt($lightning_address);
-        if ($encrypted !== false) {
-            $response['encrypted_link'] = home_url('?aff=' . urlencode($encrypted));
+        // Check if there's a custom mapping for this lightning address
+        $custom_string = array_search($lightning_address, $custom_mappings);
+        if ($custom_string !== false) {
+            $response['custom_link'] = home_url('?aff=' . urlencode($custom_string));
+            error_log('Pulse: Custom mapping found for ' . $lightning_address);
         }
+
+        if ($allow_unencrypted) {
+            $response['unencrypted_link'] = home_url('?aff=' . urlencode($lightning_address));
+            error_log('Pulse: Unencrypted link generated');
+        }
+
+        // Generate compact encrypted link
+        $response['encrypted_link'] = $this->generate_affiliate_link($lightning_address);
+        error_log('Pulse: Compact encrypted link generated');
+    } else {
+        error_log('Pulse: Invalid input format: ' . $input);
+        wp_send_json_error('Invalid input. Please enter a valid Lightning address.');
+        return;
     }
 
     if (empty($response)) {
+        error_log('Pulse: Unable to generate any affiliate links');
         wp_send_json_error('Unable to generate affiliate link. Please contact the administrator.');
     } else {
+        error_log('Pulse: Successfully generated affiliate link(s): ' . print_r($response, true));
         wp_send_json_success($response);
     }
 }
-        
+	
 		public function capture_affiliate() {
             if (isset($_GET['aff'])) {
                 $encoded_affiliate = sanitize_text_field($_GET['aff']);
@@ -587,80 +693,63 @@ public static function process_affiliate_signup() {
             }
         }
 
-    public function process_affiliate_payout($order_id) {
-        error_log('Pulse: Starting affiliate payout process for order ' . $order_id);
-        
-        $order = wc_get_order($order_id);
-        if (!$order) {
-            error_log('Pulse: Invalid order ID ' . $order_id);
-            return;
-        }
-
-        $encoded_affiliate = $order->get_meta('pulse_affiliate');
-        if (!$encoded_affiliate) {
-            error_log('Pulse: No affiliate associated with order ' . $order_id);
-            return;
-        }
-
-        $options = get_option('pulse_options');
-        $allow_unencrypted = isset($options['allow_unencrypted_addresses']) ? $options['allow_unencrypted_addresses'] : false;
-        $custom_mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
-        $commission_rate = isset($options['commission_rate']) ? floatval($options['commission_rate']) : 0;
-
-        if ($commission_rate <= 0) {
-            error_log('Pulse: Invalid commission rate for order ' . $order_id);
-            return;
-        }
-
-        // Determine the lightning address
-        if (isset($custom_mappings[$encoded_affiliate])) {
-            $lightning_address = $custom_mappings[$encoded_affiliate];
-        } elseif ($allow_unencrypted && filter_var($encoded_affiliate, FILTER_VALIDATE_EMAIL)) {
-            $lightning_address = $encoded_affiliate;
-        } else {
-            $encryption_handler = new \Pulse\Encryption_Handler();
-            if (!$encryption_handler->are_keys_set()) {
-                error_log('Pulse: Encryption keys are not set. Unable to process affiliate payout.');
-                return;
-            }
-            $decrypted = $encryption_handler->decrypt($encoded_affiliate);
-            if ($decrypted === false) {
-                error_log('Pulse: Failed to decrypt affiliate address for order ' . $order_id);
-                return;
-            }
-            $lightning_address = trim($decrypted);
-        }
-
-        error_log('Pulse: Decrypted lightning address: ' . $lightning_address);
-
-        // Calculate payout amount based on order subtotal (excluding shipping and tax)
-        $order_subtotal = $order->get_subtotal();
-        $payout_amount = $order_subtotal * ($commission_rate / 100);
-        $currency = $order->get_currency();
-
-        error_log('Pulse: Calculated payout amount: ' . $payout_amount . ' ' . $currency . ' (based on subtotal: ' . $order_subtotal . ')');
-
-        // Process payout via BTCPay Server
-        $btcpay_integration = new Pulse_BTCPay_Integration();
-        $payout_id = $btcpay_integration->create_payout($lightning_address, $payout_amount, $currency);
-
-        if ($payout_id) {
-            $order->add_order_note(sprintf(__('Affiliate payout processed. Payout ID: %s, Amount: %s %s', 'pulse'), $payout_id, $payout_amount, $currency));
-            $order->update_meta_data('pulse_affiliate_payout_id', $payout_id);
-            $order->save();
-            error_log('Pulse: Successfully processed payout for order ' . $order_id . '. Payout ID: ' . $payout_id);
-
-            do_action('pulse_affiliate_payout_processed', $order_id, $payout_id, $lightning_address, $payout_amount, $currency);
-        } else {
-            error_log('Pulse: Failed to process affiliate payout for order ' . $order_id);
-            $order->add_order_note(__('Failed to process affiliate payout. Please check the logs for more information.', 'pulse'));
-
-            do_action('pulse_affiliate_payout_failed', $order_id, $lightning_address, $payout_amount, $currency);
-        }
-
-        return $payout_id ? $payout_id : false;
+    public function generate_affiliate_link($lightning_address) {
+        $padded = str_pad($lightning_address, 64, "\0"); // Pad to fixed length
+        $encrypted = openssl_encrypt($padded, 'aes-128-ecb', hex2bin($this->encryption_key), OPENSSL_RAW_DATA);
+        $encoded = rtrim(strtr(base64_encode($encrypted), '+/', '-_'), '=');
+        return home_url('?aff=' . $encoded);
     }
-	
+
+    public function decode_affiliate_link($encoded) {
+        $encrypted = base64_decode(strtr($encoded, '-_', '+/') . '==');
+        $decrypted = openssl_decrypt($encrypted, 'aes-128-ecb', hex2bin($this->encryption_key), OPENSSL_RAW_DATA);
+        return rtrim($decrypted, "\0");
+    }
+
+public function process_affiliate_payout($order_id) {
+    $order = wc_get_order($order_id);
+    if (!$order) {
+        error_log('Pulse: Invalid order ID ' . $order_id);
+        return false;
+    }
+
+    $encoded_affiliate = $order->get_meta('pulse_affiliate');
+    if (!$encoded_affiliate) {
+        error_log('Pulse: No affiliate associated with order ' . $order_id);
+        return false;
+    }
+
+    $lightning_address = $this->decode_affiliate_link($encoded_affiliate);
+    if (!$lightning_address) {
+        error_log('Pulse: Failed to decode affiliate for order ' . $order_id);
+        return false;
+    }
+
+    // Get commission rate from plugin settings
+    $options = get_option('pulse_options');
+    $commission_rate = isset($options['commission_rate']) ? floatval($options['commission_rate']) : 10; // Default to 10%
+
+    // Calculate payout amount
+    $order_subtotal = $order->get_subtotal();
+    $payout_amount = $order_subtotal * ($commission_rate / 100);
+    $currency = $order->get_currency();
+
+    // Process payout via BTCPay Server
+    $btcpay_integration = new Pulse_BTCPay_Integration();
+    $payout_id = $btcpay_integration->create_payout($lightning_address, $payout_amount, $currency);
+
+    if ($payout_id) {
+        $order->add_order_note(sprintf(__('Affiliate payout processed. Payout ID: %s, Amount: %s %s', 'pulse'), $payout_id, $payout_amount, $currency));
+        $order->update_meta_data('pulse_affiliate_payout_id', $payout_id);
+        $order->save();
+        error_log('Pulse: Successfully processed payout for order ' . $order_id . '. Payout ID: ' . $payout_id);
+        return true;
+    } else {
+        error_log('Pulse: Failed to process affiliate payout for order ' . $order_id);
+        $order->add_order_note(__('Failed to process affiliate payout. Please check the logs for more information.', 'pulse'));
+        return false;
+    }
+}	
     /**
      * Initialize the plugin
      */
