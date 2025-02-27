@@ -53,6 +53,50 @@
             }
         });
 
+        // BTCPay Server cache clearing
+        $('#pulse-clear-cache').on('click', function() {
+            var $button = $(this);
+            var $status = $('#cache-status');
+            
+            $button.prop('disabled', true);
+            $status.text('Clearing cache...');
+            
+            $.ajax({
+                url: pulseData.ajaxUrl,
+                type: 'POST',
+                data: {
+                    action: 'pulse_clear_btcpay_cache',
+                    nonce: pulseData.clearCacheNonce
+                },
+                success: function(response) {
+                    if (response.success) {
+                        $status.text(response.data.message);
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1000);
+                    } else {
+                        $status.text('Error clearing cache');
+                        $button.prop('disabled', false);
+                    }
+                },
+                error: function() {
+                    $status.text('Error clearing cache');
+                    $button.prop('disabled', false);
+                }
+            });
+        });
+
+        // Handle dismissal of BTCPay v2 notice
+        $(document).on('click', '.pulse-v2-notice .notice-dismiss', function() {
+            $.ajax({
+                url: ajaxurl,
+                data: {
+                    action: 'pulse_dismiss_v2_notice',
+                    nonce: pulseData.dismissNoticeNonce
+                }
+            });
+        });
+
         // Add any other admin-specific JavaScript here
     });
 })(jQuery);
