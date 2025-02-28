@@ -122,6 +122,10 @@ class Nostr_Handler {
             
             $body = wp_remote_retrieve_body($response);
             $data = json_decode($body, true);
+            if ($data === null || json_last_error() !== JSON_ERROR_NONE) {
+                error_log('Pulse: Invalid JSON from ' . $url . ': ' . json_last_error_msg());
+                continue;
+            }
             
             // Different APIs return different formats
             if (isset($data['pubkey']) && strlen($data['pubkey']) === 64) {
@@ -197,7 +201,7 @@ class Nostr_Handler {
             }
             
             $data = json_decode($body, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
+            if ($data === null || json_last_error() !== JSON_ERROR_NONE) {
                 error_log('Pulse: Invalid JSON from ' . $url . ': ' . json_last_error_msg());
                 continue;
             }
