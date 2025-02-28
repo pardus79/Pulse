@@ -27,6 +27,106 @@ class Shortcode_Handler {
      */
     public function register_shortcodes() {
         add_shortcode('pulse_affiliate_signup', array($this, 'affiliate_signup_shortcode'));
+        add_shortcode('nostr_lightning', array($this, 'nostr_lightning_shortcode'));
+        add_shortcode('nostr_lightning_link', array($this, 'nostr_lightning_link_shortcode'));
+    }
+    
+    /**
+     * Display Lightning address for a Nostr npub
+     *
+     * @param array $atts Shortcode attributes
+     * @return string The Lightning address or error message
+     */
+    public function nostr_lightning_shortcode($atts) {
+        $atts = shortcode_atts(
+            array(
+                'npub' => '',
+            ),
+            $atts,
+            'nostr_lightning'
+        );
+        
+        if (empty($atts['npub'])) {
+            return '<span class="pulse-error">' . esc_html__('Error: npub parameter is required', 'pulse') . '</span>';
+        }
+        
+        $npub = sanitize_text_field($atts['npub']);
+        
+        // Validate the npub
+        if (!\Pulse\Nostr_Handler::validate_npub($npub)) {
+            return '<span class="pulse-error">' . esc_html__('Error: Invalid Nostr npub format', 'pulse') . '</span>';
+        }
+        
+        // Get lightning address using our existing handler with priority for Profile API
+        $lightning_address = \Pulse\Nostr_Handler::get_lightning_address_from_npub($npub, false);
+        
+        if (!$lightning_address) {
+            return '<span class="pulse-error">' . esc_html__('Error: No Lightning address found for this npub', 'pulse') . '</span>';
+        }
+        
+        return '<span class="pulse-lightning-address">' . esc_html($lightning_address) . '</span>';
+    }
+    
+    /**
+     * Create a Lightning payment link for a Nostr npub
+     *
+     * @param array $atts Shortcode attributes
+     * @return string HTML for the Lightning payment link
+     */
+    public function nostr_lightning_link_shortcode($atts) {
+        $atts = shortcode_atts(
+            array(
+                'npub' => '',
+                'label' => __('Pay with Lightning', 'pulse'),
+                'amount' => '',
+                'message' => '',
+                'class' => 'pulse-lightning-button',
+            ),
+            $atts,
+            'nostr_lightning_link'
+        );
+        
+        if (empty($atts['npub'])) {
+            return '<span class="pulse-error">' . esc_html__('Error: npub parameter is required', 'pulse') . '</span>';
+        }
+        
+        $npub = sanitize_text_field($atts['npub']);
+        
+        // Validate the npub
+        if (!\Pulse\Nostr_Handler::validate_npub($npub)) {
+            return '<span class="pulse-error">' . esc_html__('Error: Invalid Nostr npub format', 'pulse') . '</span>';
+        }
+        
+        // Get lightning address using our existing handler with priority for Profile API
+        $lightning_address = \Pulse\Nostr_Handler::get_lightning_address_from_npub($npub, false);
+        
+        if (!$lightning_address) {
+            return '<span class="pulse-error">' . esc_html__('Error: No Lightning address found for this npub', 'pulse') . '</span>';
+        }
+        
+        // Build the Lightning payment URL
+        $url = 'lightning:' . esc_attr($lightning_address);
+        
+        // Add optional amount parameter (in sats)
+        if (!empty($atts['amount']) && is_numeric($atts['amount'])) {
+            $url .= '?amount=' . intval($atts['amount']);
+            
+            // Add optional message parameter
+            if (!empty($atts['message'])) {
+                $url .= '&message=' . urlencode($atts['message']);
+            }
+        } else if (!empty($atts['message'])) {
+            // Just message without amount
+            $url .= '?message=' . urlencode($atts['message']);
+        }
+        
+        // Return formatted link with optional CSS class
+        return sprintf(
+            '<a href="%s" class="%s">%s</a>',
+            esc_url($url),
+            esc_attr($atts['class']),
+            esc_html($atts['label'])
+        );
     }
     
     /**
@@ -184,9 +284,14 @@ class Shortcode_Handler {
             if (\Pulse\Nostr_Handler::validate_npub($input_value)) {
                 // For signup, use the cache normally to avoid unnecessary API calls
                 $lightning_address = \Pulse\Nostr_Handler::get_lightning_address_from_npub($input_value, false);
+                
                 if (!$lightning_address) {
                     error_log('Pulse: Could not find Lightning address for npub: ' . $input_value);
-                    wp_send_json_error('Could not find a Lightning address associated with this npub. Please make sure your Nostr profile has a Lightning address set.');
+                    // More helpful error message
+                    $error_message = 'Could not find a Lightning address associated with this npub. ';
+                    $error_message .= "Please make sure your Nostr profile has a Lightning address set in the 'lud16' field. ";
+                    $error_message .= 'Alternatively, you can ask the site administrator to create a custom mapping for your npub.';
+                    wp_send_json_error($error_message);
                     return;
                 }
                 error_log('Pulse: Found Lightning address for npub: ' . $lightning_address);

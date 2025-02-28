@@ -15,11 +15,14 @@
  */
 
 // If this file is called directly, abort.
-if (\!defined('WPINC')) {
+if (!defined('WPINC')) {
     die;
 }
 
 spl_autoload_register(function ($class) {
+    // Debug to show every class request
+    error_log("Pulse: Autoloader called for class: " . $class);
+
     // Base directory for the namespace prefix
     $base_dir = __DIR__ . '/includes/';
 
@@ -28,23 +31,31 @@ spl_autoload_register(function ($class) {
 
     // Does the class use the namespace prefix?
     $len = strlen($prefix);
-    if (strncmp($prefix, $class, $len) \!== 0) {
+    if (strncmp($prefix, $class, $len) !== 0) {
         // No, move to the next registered autoloader
+        error_log("Pulse: Class $class doesn't use Pulse namespace, skipping");
         return;
     }
 
     // Get the relative class name
     $relative_class = substr($class, $len);
+    error_log("Pulse: Looking for relative class: " . $relative_class);
 
     // Try different file naming conventions
     $file_variants = [
         $base_dir . 'class-' . strtolower(str_replace('\\', '-', $relative_class)) . '.php',
+        $base_dir . 'class-' . strtolower(str_replace(['\\', '_'], '-', $relative_class)) . '.php',
         $base_dir . 'class-' . strtolower(str_replace(['\\', '_'], '', $relative_class)) . '.php',
     ];
 
+    error_log("Pulse: Will try these files: " . implode(', ', $file_variants));
+
+    // Check if files exist before trying to require them
     foreach ($file_variants as $file) {
+        error_log("Pulse: Checking if file exists: " . $file . " - " . (file_exists($file) ? 'YES' : 'NO'));
         if (file_exists($file)) {
-            require $file;
+            error_log("Pulse: Loading file: " . $file);
+            require_once $file;
             error_log("Pulse: Successfully loaded class file: " . $file);
             return true;
         }
@@ -58,11 +69,21 @@ spl_autoload_register(function ($class) {
 define('PULSE_VERSION', '0.3.0');
 define('PULSE_PATH', plugin_dir_path(__FILE__));
 define('PULSE_URL', plugin_dir_url(__FILE__));
-use Pulse\Encryption_Handler;
-// Classes are loaded via autoloader
+
+// Direct includes for required files instead of relying on autoloader
+require_once PULSE_PATH . 'includes/class-btcpay-integration.php';
+require_once PULSE_PATH . 'includes/class-admin-settings.php';
+require_once PULSE_PATH . 'includes/class-affiliate-link-handler.php';
+require_once PULSE_PATH . 'includes/class-affiliate-processor.php';
+require_once PULSE_PATH . 'includes/class-shortcode-handler.php';
+require_once PULSE_PATH . 'includes/class-nostr-handler.php';
+require_once PULSE_PATH . 'includes/class-encryption-handler.php';
+require_once PULSE_PATH . 'includes/class-nostr-profile-api.php';
+// Don't load class-pulse-admin.php to avoid duplicate admin menus
+// Classes are loaded directly
 
 // Main plugin class
-if (\!class_exists('Pulse')) {
+if (!class_exists('Pulse')) {
     class Pulse {
         private $affiliate_link_handler;
         private $btcpay_integration;
@@ -71,17 +92,40 @@ if (\!class_exists('Pulse')) {
         private $shortcode_handler;
         
         public function __construct() {
+            // Debug loading
+            error_log('Pulse: Starting constructor');
+            
+            // Check if classes exist before instantiating
+            if (!class_exists('\\Pulse\\BTCPay_Integration')) {
+                error_log('Pulse: BTCPay_Integration class not found');
+                return;
+            }
+            
             // Initialize core components
-            $this->btcpay_integration = new \Pulse\BTCPay_Integration();
-            $this->admin_settings = new \Pulse\Admin_Settings($this->btcpay_integration);
-            $this->affiliate_link_handler = new \Pulse\Affiliate_Link_Handler();
-            
-            // Initialize modules
-            $this->affiliate_processor = new \Pulse\Affiliate_Processor($this->btcpay_integration, $this->affiliate_link_handler);
-            $this->shortcode_handler = new \Pulse\Shortcode_Handler($this->affiliate_link_handler);
-            
-            // Register activation hook
-            register_activation_hook(__FILE__, array($this, 'activate'));
+            try {
+                error_log('Pulse: Initializing BTCPay_Integration');
+                $this->btcpay_integration = new \Pulse\BTCPay_Integration();
+                
+                error_log('Pulse: Initializing Admin_Settings');
+                $this->admin_settings = new \Pulse\Admin_Settings();
+                
+                error_log('Pulse: Initializing Affiliate_Link_Handler');
+                $this->affiliate_link_handler = new \Pulse\Affiliate_Link_Handler();
+                
+                // Initialize modules
+                error_log('Pulse: Initializing Affiliate_Processor');
+                $this->affiliate_processor = new \Pulse\Affiliate_Processor($this->btcpay_integration, $this->affiliate_link_handler);
+                
+                error_log('Pulse: Initializing Shortcode_Handler');
+                $this->shortcode_handler = new \Pulse\Shortcode_Handler($this->affiliate_link_handler);
+                
+                // Register activation hook
+                register_activation_hook(__FILE__, array($this, 'activate'));
+                
+                error_log('Pulse: Constructor completed successfully');
+            } catch (\Exception $e) {
+                error_log('Pulse: Exception in constructor: ' . $e->getMessage());
+            }
         }
         
         public function run() {
@@ -103,7 +147,10 @@ if (\!class_exists('Pulse')) {
                     'auto_approve_claims' => true,
                     'custom_affiliate_mappings' => array(),
                     'enable_nostr' => true,
-                    'nostr_relays' => 'wss://relay.damus.io,wss://nos.lol,wss://relay.nostr.band'
+                    'nostr_relays' => 'wss://relay.damus.io,wss://nos.lol,wss://relay.nostr.band',
+                    'nostr_profile_api_url' => '',
+                    'nostr_profile_api_key' => '',
+                    'nostr_profile_api_cache_duration' => 1 // Default to 1 hour
                 );
                 add_option('pulse_options', $default_options);
             }
