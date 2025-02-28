@@ -50,8 +50,16 @@ class Nostr_Handler {
             error_log('Pulse: Invalid npub characters');
             return false;
         }
+        
+        // Use our npub_to_hex method to validate the bech32 encoding
+        // This provides an extra layer of validation since npub_to_hex performs
+        // a full bech32 validation via API calls
+        $pubkey = self::npub_to_hex($npub);
+        if (!$pubkey) {
+            error_log('Pulse: Failed bech32 validation for npub');
+            return false;
+        }
 
-        // Basic validation passed
         return true;
     }
 
@@ -59,24 +67,21 @@ class Nostr_Handler {
      * Get Lightning address from a Nostr npub
      *
      * @param string $npub The Nostr npub
-     * @param bool $skip_cache Whether to skip the cache and fetch fresh data
+     * @param bool $skip_cache Whether to skip the cache for initial lookup (will still fall back to cache if APIs fail)
      * @return string|bool The Lightning address or false if not found
      */
     public static function get_lightning_address_from_npub($npub, $skip_cache = false) {
-        // First check if we have a cached result regardless of skip_cache flag
-        // This is needed for fallback even when skipping cache
+        // Get cached address for potential fallback
         $cached_address = get_transient('pulse_npub_' . $npub);
         
-        // If we're not skipping cache and have a cached value, return it immediately
+        // Early return if using cache and we have a value
         if (!$skip_cache && $cached_address !== false) {
             error_log('Pulse: Using cached lightning address for npub ' . $npub);
             return $cached_address;
         }
         
-        // If skipping cache, log that we're trying to get fresh data
-        if ($skip_cache) {
-            error_log('Pulse: Attempting to fetch fresh lightning address for npub ' . $npub);
-        }
+        // Log that we're trying to get fresh data
+        error_log('Pulse: Attempting to fetch fresh lightning address for npub ' . $npub);
 
         // Get the public key from npub
         $pubkey = self::npub_to_hex($npub);
@@ -239,7 +244,7 @@ class Nostr_Handler {
                 return $data['profile']['lud16'];
             } elseif (isset($data['metadata'])) {
                 $metadata = is_array($data['metadata']) ? $data['metadata'] : json_decode($data['metadata'], true);
-                if (isset($metadata['lud16'])) {
+                if ($metadata && isset($metadata['lud16'])) {
                     error_log('Pulse: Found lightning address in metadata via ' . $url);
                     return $metadata['lud16'];
                 }
@@ -267,8 +272,15 @@ class Nostr_Handler {
     public static function clear_cache($npub = '') {
         if (empty($npub)) {
             global $wpdb;
-            $wpdb->query("DELETE FROM $wpdb->options WHERE option_name LIKE '_transient_pulse_npub_%'");
-            $wpdb->query("DELETE FROM $wpdb->options WHERE option_name LIKE '_transient_timeout_pulse_npub_%'");
+            // Use prepared statements for better security
+            $wpdb->query($wpdb->prepare(
+                "DELETE FROM $wpdb->options WHERE option_name LIKE %s",
+                '_transient_pulse_npub_%'
+            ));
+            $wpdb->query($wpdb->prepare(
+                "DELETE FROM $wpdb->options WHERE option_name LIKE %s",
+                '_transient_timeout_pulse_npub_%'
+            ));
         } else {
             delete_transient('pulse_npub_' . $npub);
         }

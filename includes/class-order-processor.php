@@ -22,23 +22,27 @@ class Order_Processor {
      * Process affiliate payment when an order is completed
      *
      * @param int $order_id The ID of the completed order
+     * @return bool True if payment was processed successfully, false otherwise
      */
     public function process_affiliate_payment($order_id) {
         $order = wc_get_order($order_id);
         $affiliate_link = $order->get_meta('affiliate_link');
 
         if (!$affiliate_link) {
-            return; // No affiliate link associated with this order
+            return false; // No affiliate link associated with this order
         }
 
         if ($this->is_payout_sent($order)) {
-            return; // Payout already sent
+            return true; // Payout already sent
         }
 
         $encryption_handler = new Encryption_Handler();
         $btcpay_integration = new BTCPay_Integration();
 
-        $encrypted_address = str_replace(site_url() . '/?aff=', '', $affiliate_link);
+        // Sanitize affiliate link to prevent malicious input
+        $encrypted_address = sanitize_text_field(
+            str_replace(site_url() . '/?aff=', '', $affiliate_link)
+        );
         
         // Determine if this is an npub affiliate
         $options = get_option('pulse_options');
@@ -46,19 +50,31 @@ class Order_Processor {
         
         // If this starts with npub1, it's a Nostr public key
         if ($enable_nostr && strpos($encrypted_address, 'npub1') === 0) {
+            // Validate the npub format before attempting to use it
+            if (!\Pulse\Nostr_Handler::validate_npub($encrypted_address)) {
+                $this->log_error("Invalid npub format for order $order_id: " . esc_html($encrypted_address));
+                return false;
+            }
+            
             // Try to get a fresh lightning address from the npub, but fall back to cached one if API fails
             $lightning_address = \Pulse\Nostr_Handler::get_lightning_address_from_npub($encrypted_address, true);
             if (!$lightning_address) {
                 $this->log_error("Failed to get Lightning address from npub for order $order_id");
-                return;
+                return false;
             }
         } else {
-            $lightning_address = $encryption_handler->decrypt($encrypted_address);
+            // For encrypted addresses, try to decrypt
+            try {
+                $lightning_address = $encryption_handler->decrypt($encrypted_address);
+            } catch (\Exception $e) {
+                $this->log_error("Decryption error for order $order_id: " . $e->getMessage());
+                return false;
+            }
         }
 
         if (!$lightning_address || !Lightning_Address_Validator::validate($lightning_address)) {
-            $this->log_error("Invalid Lightning address for order $order_id: $lightning_address");
-            return;
+            $this->log_error("Invalid Lightning address for order $order_id: " . esc_html($lightning_address));
+            return false;
         }
 
         $options = get_option('pulse_options');
@@ -70,7 +86,7 @@ class Order_Processor {
 
         if (!$pull_payment_id) {
             $this->log_error("Failed to create pull payment for order $order_id");
-            return;
+            return false;
         }
 
         // Create payout
@@ -79,8 +95,10 @@ class Order_Processor {
         if ($payout_id) {
             $this->tag_payout_sent($order, $payout_id);
             $this->log_info("Payout sent for order $order_id. Payout ID: $payout_id");
+            return true;
         } else {
             $this->log_error("Failed to create payout for order $order_id");
+            return false;
         }
     }
 
