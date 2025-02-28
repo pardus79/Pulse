@@ -39,7 +39,22 @@ class Order_Processor {
         $btcpay_integration = new BTCPay_Integration();
 
         $encrypted_address = str_replace(site_url() . '/?aff=', '', $affiliate_link);
-        $lightning_address = $encryption_handler->decrypt($encrypted_address);
+        
+        // Determine if this is an npub affiliate
+        $options = get_option('pulse_options');
+        $enable_nostr = isset($options['enable_nostr']) ? $options['enable_nostr'] : false;
+        
+        // If this starts with npub1, it's a Nostr public key
+        if ($enable_nostr && strpos($encrypted_address, 'npub1') === 0) {
+            // Try to get a fresh lightning address from the npub, but fall back to cached one if API fails
+            $lightning_address = \Pulse\Nostr_Handler::get_lightning_address_from_npub($encrypted_address, true);
+            if (!$lightning_address) {
+                $this->log_error("Failed to get Lightning address from npub for order $order_id");
+                return;
+            }
+        } else {
+            $lightning_address = $encryption_handler->decrypt($encrypted_address);
+        }
 
         if (!$lightning_address || !Lightning_Address_Validator::validate($lightning_address)) {
             $this->log_error("Invalid Lightning address for order $order_id: $lightning_address");

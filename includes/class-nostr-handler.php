@@ -59,19 +59,36 @@ class Nostr_Handler {
      * Get Lightning address from a Nostr npub
      *
      * @param string $npub The Nostr npub
+     * @param bool $skip_cache Whether to skip the cache and fetch fresh data
      * @return string|bool The Lightning address or false if not found
      */
-    public static function get_lightning_address_from_npub($npub) {
-        // Check if we have a cached result
+    public static function get_lightning_address_from_npub($npub, $skip_cache = false) {
+        // First check if we have a cached result regardless of skip_cache flag
+        // This is needed for fallback even when skipping cache
         $cached_address = get_transient('pulse_npub_' . $npub);
-        if ($cached_address !== false) {
+        
+        // If we're not skipping cache and have a cached value, return it immediately
+        if (!$skip_cache && $cached_address !== false) {
+            error_log('Pulse: Using cached lightning address for npub ' . $npub);
             return $cached_address;
+        }
+        
+        // If skipping cache, log that we're trying to get fresh data
+        if ($skip_cache) {
+            error_log('Pulse: Attempting to fetch fresh lightning address for npub ' . $npub);
         }
 
         // Get the public key from npub
         $pubkey = self::npub_to_hex($npub);
         if (!$pubkey) {
             error_log('Pulse: Failed to convert npub to hex pubkey');
+            
+            // If we have a cached address, fall back to it regardless of skip_cache flag
+            if ($cached_address !== false) {
+                error_log('Pulse: Falling back to cached lightning address due to npub conversion failure');
+                return $cached_address;
+            }
+            
             return false;
         }
 
@@ -79,9 +96,19 @@ class Nostr_Handler {
         $lightning_address = self::query_relays_for_lightning_address($pubkey);
         
         if ($lightning_address) {
-            // Cache the result
+            // Cache the result, even if we skipped cache for the lookup
+            // This ensures future lookups can use the cache until explicitly skipped again
             set_transient('pulse_npub_' . $npub, $lightning_address, self::CACHE_DURATION);
+            error_log('Pulse: Found and cached lightning address ' . $lightning_address . ' for npub ' . $npub);
             return $lightning_address;
+        }
+        
+        error_log('Pulse: No lightning address found from API for npub ' . $npub);
+        
+        // If we have a cached address, fall back to it regardless of skip_cache flag
+        if ($cached_address !== false) {
+            error_log('Pulse: Falling back to cached lightning address ' . $cached_address);
+            return $cached_address;
         }
         
         return false;
