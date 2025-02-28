@@ -90,34 +90,53 @@ class Nostr_Handler {
     /**
      * Convert npub to hex public key
      * 
-     * This is a basic implementation. For production, use a library or more robust implementation.
+     * This implementation uses multiple APIs with fallbacks for redundancy.
      *
      * @param string $npub The npub to convert
      * @return string|bool The hex public key or false on failure
      */
     private static function npub_to_hex($npub) {
-        // This is a placeholder. In a real implementation, you would:
-        // 1. Decode the bech32 string
-        // 2. Extract the data part
-        // 3. Convert to hex
+        // Try multiple conversion services for redundancy
+        $conversion_apis = [
+            'https://api.nostr.watch/pubkey?npub=' . urlencode($npub),
+            'https://nostr.wine/api/convert/npub/' . urlencode($npub),
+            'https://api.nostrplebs.com/v1/convert/npub/' . urlencode($npub)
+        ];
         
-        // For now, we'll use a simple HTTP request to a service that can do this conversion
-        // This is just for demonstration - in production, use a proper library
-        $response = wp_remote_get('https://api.nostr.watch/pubkey?npub=' . urlencode($npub));
-        
-        if (is_wp_error($response)) {
-            error_log('Pulse: Error converting npub to hex: ' . $response->get_error_message());
-            return false;
+        foreach ($conversion_apis as $url) {
+            $response = wp_remote_get($url, [
+                'timeout' => 5,
+                'user-agent' => 'Pulse Nostr Affiliate Plugin/0.3.0'
+            ]);
+            
+            if (is_wp_error($response)) {
+                error_log('Pulse: Error converting npub using ' . $url . ': ' . $response->get_error_message());
+                continue;
+            }
+            
+            $status_code = wp_remote_retrieve_response_code($response);
+            if ($status_code !== 200) {
+                error_log('Pulse: Non-200 response from ' . $url . ': ' . $status_code);
+                continue;
+            }
+            
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            
+            // Different APIs return different formats
+            if (isset($data['pubkey']) && strlen($data['pubkey']) === 64) {
+                error_log('Pulse: Successfully converted npub to hex using ' . $url);
+                return $data['pubkey'];
+            } else if (isset($data['hex']) && strlen($data['hex']) === 64) {
+                error_log('Pulse: Successfully converted npub to hex using ' . $url);
+                return $data['hex'];
+            } else if (isset($data['result']) && strlen($data['result']) === 64) {
+                error_log('Pulse: Successfully converted npub to hex using ' . $url);
+                return $data['result'];
+            }
         }
         
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-        
-        if (isset($data['pubkey']) && strlen($data['pubkey']) === 64) {
-            return $data['pubkey'];
-        }
-        
-        error_log('Pulse: Failed to convert npub to hex pubkey with API');
+        error_log('Pulse: Failed to convert npub to hex pubkey with any API');
         return false;
     }
 
@@ -140,33 +159,68 @@ class Nostr_Handler {
         // 2. Subscribe to kind 0 (metadata) events for the given pubkey
         // 3. Parse the received events to extract the lightning address
         
-        // For now, we'll use a simple HTTP request to a Nostr profile service
+        // For now, we'll use public Nostr profile services API endpoints
         $urls = [
+            // Primary APIs
             'https://api.nostr.band/profile/' . $pubkey,
-            'https://api.nostr.watch/profile/' . $pubkey
+            'https://api.nostr.watch/profile/' . $pubkey,
+            
+            // Additional APIs for redundancy
+            'https://purplepag.es/' . $pubkey . '/json',
+            'https://nostr.directory/api/v1/profile/' . $pubkey,
+            'https://api.nostrplebs.com/v1/profile/' . $pubkey,
+            'https://rbr.bio/' . $pubkey,
+            'https://api.snort.social/api/v1/profile/' . $pubkey
         ];
         
         foreach ($urls as $url) {
             $response = wp_remote_get($url, [
-                'timeout' => 5
+                'timeout' => 5,
+                'user-agent' => 'Pulse Nostr Affiliate Plugin/0.3.0'
             ]);
             
             if (is_wp_error($response)) {
-                error_log('Pulse: Error querying Nostr profile: ' . $response->get_error_message());
+                error_log('Pulse: Error querying Nostr profile via ' . $url . ': ' . $response->get_error_message());
+                continue;
+            }
+            
+            $status_code = wp_remote_retrieve_response_code($response);
+            if ($status_code !== 200) {
+                error_log('Pulse: Non-200 response from ' . $url . ': ' . $status_code);
                 continue;
             }
             
             $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
+            if (empty($body)) {
+                error_log('Pulse: Empty response from ' . $url);
+                continue;
+            }
             
-            // Try to find the lightning address in the response
+            $data = json_decode($body, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                error_log('Pulse: Invalid JSON from ' . $url . ': ' . json_last_error_msg());
+                continue;
+            }
+            
+            // Try to find the lightning address in the response (different APIs use different structures)
             if (isset($data['profile']) && isset($data['profile']['lud16'])) {
+                error_log('Pulse: Found lightning address via ' . $url);
                 return $data['profile']['lud16'];
             } elseif (isset($data['metadata'])) {
-                $metadata = json_decode($data['metadata'], true);
+                $metadata = is_array($data['metadata']) ? $data['metadata'] : json_decode($data['metadata'], true);
                 if (isset($metadata['lud16'])) {
+                    error_log('Pulse: Found lightning address in metadata via ' . $url);
                     return $metadata['lud16'];
                 }
+            } elseif (isset($data['lightning_address'])) {
+                error_log('Pulse: Found direct lightning_address field via ' . $url);
+                return $data['lightning_address'];
+            } elseif (isset($data['lud16'])) {
+                error_log('Pulse: Found direct lud16 field via ' . $url);
+                return $data['lud16'];
+            } elseif (isset($data['data']) && isset($data['data']['lud16'])) {
+                error_log('Pulse: Found lightning address in data.lud16 via ' . $url);
+                return $data['data']['lud16'];
             }
         }
         
