@@ -118,10 +118,12 @@ class Nostr_Profile_API {
             ];
         }
 
-        // Build API URL for a simple health/status endpoint
+        // Build API URL for relays endpoint which should exist
         $api_url = trailingslashit($options['nostr_profile_api_url']);
-        $test_endpoint = 'api/v1/status'; // Assuming the API has a status endpoint
+        $test_endpoint = 'api/v1/relays';
         $url = $api_url . $test_endpoint;
+        
+        error_log('Pulse: Testing API connection to: ' . $url);
 
         // Make API request
         $response = wp_remote_get($url, [
@@ -134,14 +136,20 @@ class Nostr_Profile_API {
 
         // Check for errors
         if (is_wp_error($response)) {
+            error_log('Pulse: API connection error: ' . $response->get_error_message());
             return [
                 'success' => false,
                 'message' => sprintf(__('Connection failed: %s', 'pulse'), $response->get_error_message())
             ];
         }
 
-        // Check response code
+        // Log response
         $status_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        error_log('Pulse: API response code: ' . $status_code);
+        error_log('Pulse: API response body: ' . $body);
+
+        // Check response code
         if ($status_code !== 200) {
             return [
                 'success' => false,
@@ -149,21 +157,40 @@ class Nostr_Profile_API {
             ];
         }
 
-        // Parse JSON response (optional)
-        $body = wp_remote_retrieve_body($response);
+        // Parse JSON response
         $data = json_decode($body, true);
 
         if ($data === null || json_last_error() !== JSON_ERROR_NONE) {
+            error_log('Pulse: API JSON parse error: ' . json_last_error_msg());
             return [
                 'success' => false,
-                'message' => __('API returned invalid JSON response', 'pulse')
+                'message' => sprintf(__('API returned invalid JSON response: %s', 'pulse'), json_last_error_msg())
             ];
         }
 
-        return [
-            'success' => true,
-            'message' => __('Connection successful!', 'pulse')
-        ];
+        // Log parsed data structure
+        error_log('Pulse: API response data: ' . print_r($data, true));
+
+        // Try to detect the structure of the response
+        if (isset($data['relays']) && is_array($data['relays'])) {
+            return [
+                'success' => true,
+                'message' => sprintf(__('Connection successful! Connected to %d relays.', 'pulse'), count($data['relays']))
+            ];
+        } elseif (is_array($data) && !empty($data)) {
+            // If data is an array but doesn't have 'relays' key, it might be directly returning the relays
+            return [
+                'success' => true,
+                'message' => sprintf(__('Connection successful! Connected to %d relays.', 'pulse'), count($data))
+            ];
+        } else {
+            // Provide detailed debug info in the error message
+            return [
+                'success' => false,
+                'message' => sprintf(__('API response format unexpected: %s', 'pulse'), 
+                    substr(json_encode($data), 0, 100) . (strlen(json_encode($data)) > 100 ? '...' : ''))
+            ];
+        }
     }
 
     /**

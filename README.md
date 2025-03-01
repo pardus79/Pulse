@@ -10,6 +10,7 @@ Pulse is a WordPress plugin that enables automated affiliate payouts for WooComm
 - Support for both encrypted and unencrypted affiliate links
 - Custom affiliate mappings for personalized affiliate codes
 - Integration with WooCommerce for order tracking and commission calculation
+- Nostr npub support with reliable Lightning address resolution via Nostr Profile API
 
 ## Requirements
 
@@ -32,6 +33,7 @@ Pulse is a WordPress plugin that enables automated affiliate payouts for WooComm
 3. Set your desired commission rate.
 4. Generate or enter your encryption keys for secure affiliate links.
 5. Configure additional settings such as allowing unencrypted addresses and custom affiliate mappings.
+6. If using Nostr integration, configure the Nostr Profile API settings. You can host your own instance of the [Nostr Profile API](https://github.com/pardus79/Nostr-Profile-API) service.
 
 ### Generating BTCPayServer API Key
 

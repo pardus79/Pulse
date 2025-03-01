@@ -33,18 +33,32 @@ class Affiliate_Link_Handler {
     }
 
     /**
-     * Generate an encrypted affiliate link for a lightning address
+     * Generate an encrypted affiliate link for a lightning address or npub
      * 
-     * @param string $lightning_address The lightning address to encrypt
+     * @param string $address The lightning address or npub to use for the affiliate link
      * @return string|bool The fully-qualified affiliate URL or false on failure
      */
-    public function generate_affiliate_link($lightning_address) {
-        if (empty($lightning_address) || !filter_var($lightning_address, FILTER_VALIDATE_EMAIL)) {
-            error_log('Pulse: Invalid lightning address format for encryption: ' . esc_html($lightning_address));
+    public function generate_affiliate_link($address) {
+        // Check if it's an npub (npub1...) - if so, use it directly
+        if (strpos($address, 'npub1') === 0) {
+            $options = get_option('pulse_options');
+            $enable_nostr = isset($options['enable_nostr']) ? $options['enable_nostr'] : false;
+            
+            if ($enable_nostr && \Pulse\Nostr_Handler::validate_npub($address)) {
+                return home_url('?aff=' . $address);
+            } else {
+                error_log('Pulse: Nostr support is disabled or invalid npub format: ' . esc_html($address));
+                return false;
+            }
+        }
+        
+        // Otherwise, treat as a lightning address that needs encryption
+        if (empty($address) || !filter_var($address, FILTER_VALIDATE_EMAIL)) {
+            error_log('Pulse: Invalid lightning address format for encryption: ' . esc_html($address));
             return false;
         }
         
-        $padded = str_pad($lightning_address, 64, "\0"); // Pad to fixed length
+        $padded = str_pad($address, 64, "\0"); // Pad to fixed length
         
         // For backward compatibility, keep using the same algorithm
         // but add validation and error handling
@@ -65,10 +79,10 @@ class Affiliate_Link_Handler {
     }
 
     /**
-     * Decode an encrypted affiliate link to retrieve the lightning address
+     * Decode an affiliate link to retrieve the lightning address or npub
      * 
      * @param string $encoded The encoded part of the affiliate link
-     * @return string|bool The decoded lightning address or false on failure
+     * @return string|bool The decoded lightning address/npub or false on failure
      */
     public function decode_affiliate_link($encoded) {
         if (empty($encoded)) {
@@ -76,6 +90,20 @@ class Affiliate_Link_Handler {
             return false;
         }
         
+        // Check if it's a Nostr npub (unencrypted)
+        if (strpos($encoded, 'npub1') === 0) {
+            $options = get_option('pulse_options');
+            $enable_nostr = isset($options['enable_nostr']) ? $options['enable_nostr'] : false;
+            
+            if ($enable_nostr && \Pulse\Nostr_Handler::validate_npub($encoded)) {
+                return $encoded; // Return the npub as-is
+            } else {
+                error_log('Pulse: Nostr support is disabled or invalid npub format: ' . esc_html($encoded));
+                return false;
+            }
+        }
+        
+        // Otherwise, try to decrypt as a lightning address
         try {
             // Add proper padding for base64
             $base64 = strtr($encoded, '-_', '+/');

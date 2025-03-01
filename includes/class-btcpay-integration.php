@@ -5,17 +5,19 @@
  * @package Pulse
  */
 
+namespace Pulse;
+
 // If this file is called directly, abort.
 if (!defined('WPINC')) {
     die;
 }
 
 /**
- * Class Pulse_BTCPay_Integration
+ * Class BTCPay_Integration
  *
  * Handles integration with BTCPay Server for processing payouts.
  */
-class Pulse_BTCPay_Integration {
+class BTCPay_Integration {
     private $api_url;
     private $api_key;
     private $store_id;

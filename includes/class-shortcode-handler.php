@@ -134,97 +134,196 @@ class Shortcode_Handler {
      */
     public function affiliate_signup_shortcode() {
         $options = get_option('pulse_options');
-        $public_key = isset($options['public_key']) ? $options['public_key'] : '';
         $enable_nostr = isset($options['enable_nostr']) ? $options['enable_nostr'] : false;
 
         ob_start();
         ?>
-        <form id="pulse-affiliate-signup-form">
-            <div class="input-type-selector">
-                <label><input type="radio" name="input_type" value="lightning" checked> Lightning Address</label>
-                <?php if ($enable_nostr): ?>
-                <label><input type="radio" name="input_type" value="nostr"> Nostr npub</label>
-                <?php endif; ?>
+        <div class="pulse-affiliate-signup">
+            <form id="pulse-affiliate-signup-form" class="pulse-affiliate-form">
+                <div class="pulse-tab-container">
+                    <div class="pulse-tabs">
+                        <button type="button" class="pulse-tab active" data-tab="lightning"><?php esc_html_e('Lightning Address', 'pulse'); ?></button>
+                        <?php if ($enable_nostr): ?>
+                        <button type="button" class="pulse-tab" data-tab="nostr"><?php esc_html_e('Nostr npub', 'pulse'); ?></button>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <div class="pulse-tab-content active" id="lightning-tab">
+                        <label for="pulse-lightning-address"><?php esc_html_e('Lightning Address:', 'pulse'); ?></label>
+                        <input type="text" id="pulse-lightning-address" name="lightning-address" placeholder="you@lightning.address" required>
+                        <div id="pulse-address-error" class="pulse-error-message" aria-live="polite"></div>
+                    </div>
+                    
+                    <?php if ($enable_nostr): ?>
+                    <div class="pulse-tab-content" id="nostr-tab">
+                        <label for="pulse-nostr-npub"><?php esc_html_e('Nostr npub:', 'pulse'); ?></label>
+                        <input type="text" id="pulse-nostr-npub" name="nostr-npub" placeholder="npub1..." required disabled>
+                        <div id="pulse-npub-error" class="pulse-error-message" aria-live="polite"></div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                
+                <button type="submit"><?php esc_html_e('Generate Affiliate Link', 'pulse'); ?></button>
+            </form>
+
+            <div id="pulse-result" class="pulse-affiliate-result" style="display:none;">
+                <h3><?php esc_html_e('Your Affiliate Links:', 'pulse'); ?></h3>
+                
+                <div id="pulse-links-container">
+                    <?php if ($enable_nostr): ?>
+                    <div id="pulse-nostr-link-container" style="display:none;">
+                        <h4><?php esc_html_e('Nostr npub Link:', 'pulse'); ?></h4>
+                        <p id="pulse-nostr-link"></p>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <div id="pulse-lightning-container">
+                        <h4><?php esc_html_e('Unencrypted Link:', 'pulse'); ?></h4>
+                        <p id="pulse-unencrypted-link"></p>
+                        
+                        <h4><?php esc_html_e('Encrypted Link:', 'pulse'); ?></h4>
+                        <p id="pulse-encrypted-link"></p>
+                    </div>
+                </div>
             </div>
-            
-            <div id="lightning-input-section">
-                <label for="pulse-lightning-address">Lightning Address:</label>
-                <input type="text" id="pulse-lightning-address" name="lightning_address" placeholder="you@lightning.address">
-            </div>
-            
-            <?php if ($enable_nostr): ?>
-            <div id="nostr-input-section" style="display:none;">
-                <label for="pulse-nostr-npub">Nostr npub:</label>
-                <input type="text" id="pulse-nostr-npub" name="nostr_npub" placeholder="npub1...">
-            </div>
-            <?php endif; ?>
-            
-            <button type="submit">Generate Affiliate Link</button>
-        </form>
-        <div id="pulse-result" style="display:none;"></div>
-        <div id="pulse-public-key-info">
-            <h3>Public Encryption Key:</h3>
-            <pre><?php echo esc_html($public_key); ?></pre>
-            <p>You can use this public key to independently verify your encrypted affiliate link.</p>
         </div>
+
+        <style>
+        .pulse-tab-container {
+            margin-bottom: 20px;
+        }
+        .pulse-tabs {
+            display: flex;
+            margin-bottom: 15px;
+        }
+        .pulse-tab {
+            padding: 8px 16px;
+            background: #f1f1f1;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .pulse-tab.active {
+            background: #fff;
+            border-bottom: 1px solid #fff;
+            position: relative;
+            z-index: 1;
+        }
+        .pulse-tab-content {
+            display: none;
+            padding: 15px;
+            border: 1px solid #ddd;
+            margin-top: -1px;
+        }
+        .pulse-tab-content.active {
+            display: block;
+        }
+        #pulse-links-container h4 {
+            margin-top: 20px;
+            margin-bottom: 5px;
+        }
+        </style>
+
         <script>
         jQuery(document).ready(function($) {
-            // Toggle input fields based on selected type
-            $('input[name="input_type"]').change(function() {
-                if ($(this).val() === 'lightning') {
-                    $('#lightning-input-section').show();
-                    $('#nostr-input-section').hide();
-                } else {
-                    $('#lightning-input-section').hide();
-                    $('#nostr-input-section').show();
+            // Tab switching
+            $('.pulse-tab').on('click', function() {
+                // Remove active class from all tabs
+                $('.pulse-tab').removeClass('active');
+                
+                // Add active class to clicked tab
+                $(this).addClass('active');
+                
+                // Hide all tab contents
+                $('.pulse-tab-content').removeClass('active');
+                
+                // Show active tab content
+                const tabName = $(this).data('tab');
+                $('#' + tabName + '-tab').addClass('active');
+                
+                // Enable/disable input fields based on active tab
+                if (tabName === 'lightning') {
+                    $('#pulse-lightning-address').prop('disabled', false);
+                    $('#pulse-nostr-npub').prop('disabled', true);
+                } else if (tabName === 'nostr') {
+                    $('#pulse-lightning-address').prop('disabled', true);
+                    $('#pulse-nostr-npub').prop('disabled', false);
                 }
             });
             
+            // Form submission
             $('#pulse-affiliate-signup-form').on('submit', function(e) {
                 e.preventDefault();
-                var inputType = $('input[name="input_type"]:checked').val();
-                var inputValue = '';
+                var $submitButton = $(this).find('button[type="submit"]');
+                var $resultContainer = $('#pulse-result');
                 
-                if (inputType === 'lightning') {
-                    inputValue = $('#pulse-lightning-address').val();
-                } else {
-                    inputValue = $('#pulse-nostr-npub').val();
+                // Determine which tab is active
+                var activeTab = $('.pulse-tab.active').data('tab');
+                var isNostr = (activeTab === 'nostr');
+                
+                // Get the appropriate input value
+                var inputValue = isNostr 
+                    ? $('#pulse-nostr-npub').val() 
+                    : $('#pulse-lightning-address').val();
+                
+                if (!inputValue) {
+                    alert('Please enter a ' + (isNostr ? 'Nostr npub' : 'Lightning address'));
+                    return;
                 }
                 
+                $submitButton.prop('disabled', true).text('Processing...');
+                $resultContainer.hide();
+
                 $.ajax({
                     url: '<?php echo admin_url('admin-ajax.php'); ?>',
                     type: 'POST',
                     data: {
                         action: 'pulse_affiliate_signup',
-                        input_type: inputType,
+                        input_type: isNostr ? 'nostr' : 'lightning',
                         input_value: inputValue,
                         nonce: '<?php echo wp_create_nonce('pulse_affiliate_signup'); ?>'
                     },
                     success: function(response) {
-                        console.log('Received response:', response);
                         if (response.success) {
-                            var resultHtml = '<h3>Your Affiliate Links:</h3><ul>';
-                            if (response.data.lightning_link) {
-                                resultHtml += '<li>Lightning Address Link: ' + response.data.lightning_link + '</li>';
+                            if (isNostr) {
+                                // Show Nostr link section
+                                if (response.data.custom_link) {
+                                    $('#pulse-nostr-link').text(response.data.custom_link);
+                                    $('#pulse-nostr-link-container').show();
+                                } else {
+                                    $('#pulse-nostr-link-container').hide();
+                                }
+                                
+                                // Show lightning links if available
+                                if (response.data.unencrypted_link) {
+                                    $('#pulse-unencrypted-link').text(response.data.unencrypted_link);
+                                    $('#pulse-encrypted-link').text(response.data.encrypted_link);
+                                    $('#pulse-lightning-container').show();
+                                } else {
+                                    $('#pulse-lightning-container').hide();
+                                }
+                            } else {
+                                // For lightning address response
+                                $('#pulse-unencrypted-link').text(response.data.unencrypted_link);
+                                $('#pulse-encrypted-link').text(response.data.encrypted_link);
+                                $('#pulse-lightning-container').show();
+                                
+                                // Hide Nostr section
+                                $('#pulse-nostr-link-container').hide();
                             }
-                            if (response.data.custom_link) {
-                                resultHtml += '<li>Custom Link: ' + response.data.custom_link + '</li>';
-                            }
-                            if (response.data.unencrypted_link) {
-                                resultHtml += '<li>Unencrypted Link: ' + response.data.unencrypted_link + '</li>';
-                            }
-                            if (response.data.encrypted_link) {
-                                resultHtml += '<li>Encrypted Link: ' + response.data.encrypted_link + '</li>';
-                            }
-                            resultHtml += '</ul>';
-                            $('#pulse-result').html(resultHtml).show();
+                            
+                            $resultContainer.show();
                         } else {
-                            alert('Error: ' + response.data);
+                            alert(response.data || 'An error occurred. Please try again.');
                         }
                     },
                     error: function(xhr, status, error) {
                         console.error('AJAX Error:', status, error);
                         alert('An error occurred while processing your request. Please try again later.');
+                    },
+                    complete: function() {
+                        $submitButton.prop('disabled', false).text('Generate Affiliate Link');
                     }
                 });
             });
@@ -268,8 +367,8 @@ class Shortcode_Handler {
         $custom_mappings = isset($options['custom_affiliate_mappings']) ? $options['custom_affiliate_mappings'] : array();
         $enable_nostr = isset($options['enable_nostr']) ? $options['enable_nostr'] : false;
 
-        $response = array();
         $lightning_address = '';
+        $response = array();
 
         if ($input_type === 'lightning') {
             if (filter_var($input_value, FILTER_VALIDATE_EMAIL)) {
@@ -282,16 +381,17 @@ class Shortcode_Handler {
             }
         } elseif ($input_type === 'nostr' && $enable_nostr) {
             if (\Pulse\Nostr_Handler::validate_npub($input_value)) {
-                // For signup, use the cache normally to avoid unnecessary API calls
+                // Generate direct npub link
+                $response['custom_link'] = home_url('?aff=' . urlencode($input_value));
+                error_log('Pulse: Generated npub affiliate link');
+                
+                // Also try to get lightning address
                 $lightning_address = \Pulse\Nostr_Handler::get_lightning_address_from_npub($input_value, false);
                 
                 if (!$lightning_address) {
-                    error_log('Pulse: Could not find Lightning address for npub: ' . $input_value);
-                    // More helpful error message
-                    $error_message = 'Could not find a Lightning address associated with this npub. ';
-                    $error_message .= "Please make sure your Nostr profile has a Lightning address set in the 'lud16' field. ";
-                    $error_message .= 'Alternatively, you can ask the site administrator to create a custom mapping for your npub.';
-                    wp_send_json_error($error_message);
+                    error_log('Pulse: No Lightning address found for npub, but we have the npub link');
+                    $response['unencrypted_link'] = false; // Make sure we indicate no lightning links
+                    wp_send_json_success($response);
                     return;
                 }
                 error_log('Pulse: Found Lightning address for npub: ' . $lightning_address);

@@ -162,14 +162,14 @@ class Admin_Settings {
             'pulse_nostr_section'
         );
         
-        add_settings_field(
-            'nostr_relays', 
-            __('Nostr Relays', 'pulse'), 
-            array($this, 'nostr_relays_callback'), 
-            'pulse-settings', 
-            'pulse_nostr_section'
-        );
-        
+//         add_settings_field(
+//             'nostr_relays', 
+//             __('Nostr Relays', 'pulse'), 
+//             array($this, 'nostr_relays_callback'), 
+//             'pulse-settings', 
+//             'pulse_nostr_section'
+//         );
+//         
         // Nostr Profile API Settings
         add_settings_section(
             'pulse_nostr_profile_api_section',
@@ -280,9 +280,9 @@ class Admin_Settings {
         else
             $new_input['enable_nostr'] = false;
             
-        if(isset($input['nostr_relays']))
-            $new_input['nostr_relays'] = sanitize_text_field($input['nostr_relays']);
-            
+//         if(isset($input['nostr_relays']))
+//             $new_input['nostr_relays'] = sanitize_text_field($input['nostr_relays']);
+//             
         // Nostr Profile API settings
         if(isset($input['nostr_profile_api_url']))
             $new_input['nostr_profile_api_url'] = esc_url_raw($input['nostr_profile_api_url']);
@@ -428,15 +428,15 @@ class Admin_Settings {
             __('Enable Nostr npub support for affiliate links', 'pulse')
         );
     }
-    
-    public function nostr_relays_callback() {
-        printf(
-            '<input type="text" id="nostr_relays" name="pulse_options[nostr_relays]" value="%s" class="large-text" />
-            <p class="description">%s</p>',
-            isset($this->options['nostr_relays']) ? esc_attr($this->options['nostr_relays']) : '',
-            __('Comma-separated list of Nostr relay URLs (e.g., wss://relay.damus.io,wss://nos.lol)', 'pulse')
-        );
-    }
+//     
+//     public function nostr_relays_callback() {
+//         printf(
+//             '<input type="text" id="nostr_relays" name="pulse_options[nostr_relays]" value="%s" class="large-text" />
+//             <p class="description">%s</p>',
+//             isset($this->options['nostr_relays']) ? esc_attr($this->options['nostr_relays']) : '',
+//             __('Comma-separated list of Nostr relay URLs (e.g., wss://relay.damus.io,wss://nos.lol)', 'pulse')
+//         );
+//     }
     
     /**
      * Callback for the Nostr Profile API URL field

@@ -20,9 +20,6 @@ if (!defined('WPINC')) {
 }
 
 spl_autoload_register(function ($class) {
-    // Debug to show every class request
-    error_log("Pulse: Autoloader called for class: " . $class);
-
     // Base directory for the namespace prefix
     $base_dir = __DIR__ . '/includes/';
 
@@ -33,13 +30,11 @@ spl_autoload_register(function ($class) {
     $len = strlen($prefix);
     if (strncmp($prefix, $class, $len) !== 0) {
         // No, move to the next registered autoloader
-        error_log("Pulse: Class $class doesn't use Pulse namespace, skipping");
         return;
     }
 
     // Get the relative class name
     $relative_class = substr($class, $len);
-    error_log("Pulse: Looking for relative class: " . $relative_class);
 
     // Try different file naming conventions
     $file_variants = [
@@ -48,21 +43,13 @@ spl_autoload_register(function ($class) {
         $base_dir . 'class-' . strtolower(str_replace(['\\', '_'], '', $relative_class)) . '.php',
     ];
 
-    error_log("Pulse: Will try these files: " . implode(', ', $file_variants));
-
     // Check if files exist before trying to require them
     foreach ($file_variants as $file) {
-        error_log("Pulse: Checking if file exists: " . $file . " - " . (file_exists($file) ? 'YES' : 'NO'));
         if (file_exists($file)) {
-            error_log("Pulse: Loading file: " . $file);
             require_once $file;
-            error_log("Pulse: Successfully loaded class file: " . $file);
             return true;
         }
     }
-
-    error_log("Pulse: Failed to load class file for: " . $class);
-    error_log("Pulse: Tried files: " . implode(', ', $file_variants));
 });
 
 // Define plugin constants
